@@ -25,7 +25,7 @@ A versão hospedada inclui checklist, kanban, orçamento, importação de itens/
 - Importação CSV (vírgula ou ponto e vírgula), XLSX e XLS, com revisão, mapeamento de colunas, validação e deduplicação. Limite de 5 MB e 2.000 linhas; somente primeira aba.
 - Importação por CSV colado, com exemplo de um item e dois subitens, revisão e confirmação. A revisão é invalidada ao editar o texto.
 - Template configurável e exportação de CSV ou template Excel.
-- Importação/exportação de opções por item, com nome/modelo, loja, preço, frete, link, data/hora da consulta, nota, quantidade de avaliações, fonte, prazo e observações. Template CSV/Excel e pedido de pesquisa pronto para copiar. Duplicados idênticos são ignorados; consultas em novas datas ou com valores diferentes são preservadas.
+- Importação/exportação de opções por item, com nome/modelo, loja, preço, frete, link, data/hora da consulta, nota, quantidade de avaliações, fonte, prazo, observações e foto do produto (`imagem_url`). Template CSV/Excel e pedido de pesquisa pronto para copiar. Duplicados idênticos são ignorados; consultas em novas datas ou com valores diferentes são preservadas.
 - Botão Buscar opções em cada item e no kanban. Comparação com preço mínimo/máximo, nota mínima, quantidade de avaliações, frete grátis, limite de orçamento e ordenação. Exemplos, importadas e busca ao vivo ficam separados. Notas e contagens ausentes nunca são inventadas. O histórico lista as consultas importadas, sem inventar preços anteriores. A comparação mantém uma única opção atual por produto, reconhecido pelo mesmo link (ignorando parâmetros de campanha) ou mesmo nome + loja. As versões anteriores ficam no histórico. A data mais recente prevalece e, em empate, vence a última linha importada. Lojas e modelos diferentes continuam sendo opções separadas. A revisão informa opções novas, atualizações e versões destinadas ao histórico.
 - Persistência local no navegador, quando permitida. A prévia não exige contas ou serviços externos.
 
@@ -43,7 +43,7 @@ Datas em AAAA-MM-DD. Status: Planejado, Pesquisando, Comprado, Recebido. Priorid
 
 ## Validação realizada
 
-Build Next.js de produção e 22 testes de importação, moeda, hierarquia, cálculos, exportação, filtros de ofertas, metadados ausentes, normalização da fonte e bloqueio do endpoint sem configuração. No navegador: registro de compra com parcelas, persistência após recarregar, movimentação no kanban e importação CSV completa (colar/usar exemplo → revisar → confirmar → itens/subitens e orçamento). Também foram confirmados o bloqueio de quantidade inválida, a rejeição de duplicados e a persistência dos itens importados após recarregar. O exemplo adiciona R$ 379,50 sem duplicar o pai. A leitura de um XLSX real foi validada diretamente; a seleção de arquivo no navegador não pôde ser concluída por timeout do ambiente de testes.
+Build Next.js de produção e 26 testes de importação, moeda, hierarquia, cálculos, exportação, filtros de ofertas, metadados ausentes, normalização da fonte e bloqueio do endpoint sem configuração. No navegador: registro de compra com parcelas, persistência após recarregar, movimentação no kanban e importação CSV completa (colar/usar exemplo → revisar → confirmar → itens/subitens e orçamento). Também foram confirmados o bloqueio de quantidade inválida, a rejeição de duplicados e a persistência dos itens importados após recarregar. O exemplo adiciona R$ 379,50 sem duplicar o pai. A leitura de um XLSX real foi validada diretamente; a seleção de arquivo no navegador não pôde ser concluída por timeout do ambiente de testes.
 
 ## Próxima fase
 
@@ -70,10 +70,18 @@ Documentação da fonte usada na implementação: https://serpapi.com/google-sho
 4. Revise colunas, nomes, links e datas; confirme a importação. O app volta ao comparador na aba Importadas.
 5. Filtre as opções por preço, nota, reviews e frete. Consultas antigas ficam na aba Histórico. Use Exportar opções para guardar/reimportar todos os registros do item.
 
-Colunas oficiais, em ordem: `item_id;item;ambiente;categoria;nome;loja;preco;frete;moeda;data_consulta;link;nota;avaliacoes;prazo_entrega;fonte;observacoes`. Na importação vinculada ao item, um CSV mínimo pode conter `nome;preco;link;data_consulta`; loja e demais informações são opcionais. Em lotes, informe `item_id`, ou nome do item com ambiente/categoria para eliminar ambiguidades. Cabeçalhos legados `modelo`, `data` e `url` continuam aceitos.
+Colunas oficiais, em ordem: `item_id;item;ambiente;categoria;nome;loja;preco;frete;moeda;data_consulta;link;nota;avaliacoes;prazo_entrega;fonte;observacoes;imagem_url`. Na importação vinculada ao item, um CSV mínimo pode conter `nome;preco;link;data_consulta`; loja e demais informações são opcionais. Em lotes, informe `item_id`, ou nome do item com ambiente/categoria para eliminar ambiguidades. Cabeçalhos legados `modelo`, `data` e `url` continuam aceitos.
 
 Datas: AAAA-MM-DD, DD/MM/AAAA ou ISO com horário e fuso. Não se presume data de consulta ausente. Moeda: BRL. Preço unitário positivo, nota de 0 a 5, quantidade de avaliações inteira não negativa. Frete vazio é desconhecido; somente 0 significa grátis. Datas impossíveis, links inválidos e vínculo com outro item bloqueiam a confirmação.
 
 Exemplo da interface: três registros fictícios de dois produtos em duas datas; o comparador mostra duas opções atuais e o Histórico mantém três registros. Esse fluxo foi conferido no iframe isolado, assim como importação manual dos campos mínimos, filtros de reviews e bloqueio de duplicados.
 
 Reimportação de opções verificada no iframe isolado: produto de R$ 4.000,00 em 23/10/2026 foi atualizado para R$ 3.500,00 em 24/10/2026, mesmo com título e parâmetro de campanha diferentes. O comparador manteve uma opção; o histórico preservou as duas versões com rótulos Atual/No histórico. Valores fictícios usados somente para validação.
+
+## Fotos dos produtos
+
+A coluna opcional `imagem_url` aceita a URL HTTPS direta da foto real do produto. Os templates CSV/Excel, o mapeamento, a revisão, a exportação e o pedido de pesquisa já incluem essa coluna. Arquivos antigos sem foto continuam compatíveis. Também são aceitos os cabeçalhos `imagem`, `image_url`, `foto_url` e `thumbnail`.
+
+As fotos aparecem no comparador, na revisão da importação e no histórico, sem sair do app. URLs inválidas bloqueiam a revisão; links válidos que não carregam mostram “Sem imagem”. Fotos externas são carregadas diretamente do endereço informado, sem proxy no servidor. Na busca ao vivo, o adaptador lê a miniatura fornecida pela fonte quando disponível.
+
+Reimportar o mesmo registro com uma imagem adicionada gera uma versão atualizada da mesma opção e preserva a anterior no histórico, sem duplicar o produto no comparador.
