@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env*
+!.env.example
+dist/
+public/sandbox-*.html
+public/preview.html
+preview/
+.vercel/
+*.log

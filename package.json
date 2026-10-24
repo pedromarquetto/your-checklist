@@ -1,0 +1,22 @@
+{
+  "name": "your-checklist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "test": "node --test lib/*.test.mjs",
+    "preview:build": "node scripts/build-preview.mjs"
+  },
+  "dependencies": {
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
