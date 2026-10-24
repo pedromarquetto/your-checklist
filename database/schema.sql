@@ -16,3 +16,6 @@ create index items_parent_idx on items(parent_id);
 create index price_history_idx on price_snapshots(offer_id,observed_at desc);
 -- Ancestor cycle checks, same-room/category inheritance, status/purchase consistency,
 -- authorization, and import transactions must be implemented in the server phase.
+
+-- Proposed reference gallery for the future server-backed phase. V1 uses IndexedDB.
+create table category_references (id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, category_id uuid not null, image_url text not null, caption text, sort_order integer not null default 0, created_at timestamptz not null default now(), foreign key(category_id,project_id) references categories(id,project_id) on delete cascade);

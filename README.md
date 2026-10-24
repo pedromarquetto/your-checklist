@@ -43,7 +43,7 @@ Datas em AAAA-MM-DD. Status: Planejado, Pesquisando, Comprado, Recebido. Priorid
 
 ## Validação realizada
 
-Build Next.js de produção e 26 testes de importação, moeda, hierarquia, cálculos, exportação, filtros de ofertas, metadados ausentes, normalização da fonte e bloqueio do endpoint sem configuração. No navegador: registro de compra com parcelas, persistência após recarregar, movimentação no kanban e importação CSV completa (colar/usar exemplo → revisar → confirmar → itens/subitens e orçamento). Também foram confirmados o bloqueio de quantidade inválida, a rejeição de duplicados e a persistência dos itens importados após recarregar. O exemplo adiciona R$ 379,50 sem duplicar o pai. A leitura de um XLSX real foi validada diretamente; a seleção de arquivo no navegador não pôde ser concluída por timeout do ambiente de testes.
+Build Next.js de produção e 32 testes de importação, moeda, hierarquia, cálculos, exportação, filtros de ofertas, metadados ausentes, normalização da fonte e bloqueio do endpoint sem configuração. No navegador: registro de compra com parcelas, persistência após recarregar, movimentação no kanban e importação CSV completa (colar/usar exemplo → revisar → confirmar → itens/subitens e orçamento). Também foram confirmados o bloqueio de quantidade inválida, a rejeição de duplicados e a persistência dos itens importados após recarregar. O exemplo adiciona R$ 379,50 sem duplicar o pai. A leitura de um XLSX real foi validada diretamente; a seleção de arquivo no navegador não pôde ser concluída por timeout do ambiente de testes.
 
 ## Próxima fase
 
@@ -85,3 +85,13 @@ A coluna opcional `imagem_url` aceita a URL HTTPS direta da foto real do produto
 As fotos aparecem no comparador, na revisão da importação e no histórico, sem sair do app. URLs inválidas bloqueiam a revisão; links válidos que não carregam mostram “Sem imagem”. Fotos externas são carregadas diretamente do endereço informado, sem proxy no servidor. Na busca ao vivo, o adaptador lê a miniatura fornecida pela fonte quando disponível.
 
 Reimportar o mesmo registro com uma imagem adicionada gera uma versão atualizada da mesma opção e preserva a anterior no histórico, sem duplicar o produto no comparador.
+
+## Galeria de referências por categoria
+
+Use **Referências** no cabeçalho de uma categoria ou **Galerias** no topo do projeto. Cada categoria possui sua própria galeria, isolada por checklist. É possível criar uma categoria com referências antes de cadastrar seus itens. O botão **Adicionar item nesta categoria** abre o cadastro com a categoria preenchida.
+
+Aceita vários arquivos JPG/PNG/WebP por seleção ou arraste, até 10 MB por arquivo e 24 imagens por categoria. O navegador prepara as fotos com até 2048 pixels no lado maior e as salva localmente no IndexedDB, sem ocupar a pequena cota do localStorage usada pelo checklist. Fotos por link HTTPS também são aceitas. Imagens repetidas são ignoradas.
+
+As referências têm legenda editável, ampliação, navegação por anterior/próxima ou setas e remoção com confirmação. Quando existem imagens, miniaturas aparecem acima dos itens da categoria. Fechar a janela ou recarregar mantém as referências neste navegador. As imagens ainda não são sincronizadas com Neon ou entre dispositivos e não são incluídas na exportação CSV dos itens.
+
+Validação da galeria: 32 testes passaram. No navegador, foram conferidos inclusão por link, carregamento das imagens, legenda persistente, ampliação e navegação, troca de categoria, isolamento entre projetos e categoria criada antes de itens com cadastro já preenchido. Um teste de execução no navegador validou a preparação de um arquivo PNG de 4000 × 2500 para JPEG de 2048 × 1280 e o salvamento/leitura no IndexedDB. A caixa nativa de seleção de arquivos não fez parte desse teste automatizado.
