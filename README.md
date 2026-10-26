@@ -1,66 +1,49 @@
-# Your Checklist AI — V1
+# Your Checklist — V1
 
-Aplicação Next.js com uma prévia funcional antes de conectar Vercel, Neon e provedores de IA. Repositório: [`pedromarquetto/your-checklist`](https://github.com/pedromarquetto/your-checklist).
+Planejamento de compras para casa, viagens e eventos. Next.js + React, PostgreSQL/Neon, Better Auth e AI SDK. Repositório: [pedromarquetto/your-checklist](https://github.com/pedromarquetto/your-checklist).
 
-## Executar
+## Executar e ativar
 
-Node.js 20.9 ou superior. Instale com `npm ci`, execute `npm run dev` e abra http://localhost:3000. Para produção: `npm run build` e `npm start`. Verificação de regras: `npm test`.
+Node.js 24 recomendado (mínimo 22.13). `npm ci`, `npm run dev`. Produção: `npm run build` e `npm start`. Testes: `npm test`.
 
-## Testar na Vercel
+Veja [docs/SETUP.md](docs/SETUP.md) para configurar Neon, contas, IA, busca e a publicação na Vercel. As contas precisam de `DATABASE_URL`, `BETTER_AUTH_SECRET` e `BETTER_AUTH_URL`, seguidas de `npm run db:migrate`. `npm run config:check` confere a configuração sem exibir segredos. Sem essas variáveis, o modo local continua disponível e informa que os dados ficam neste navegador.
 
-1. Importe o repositório `pedromarquetto/your-checklist` como um novo projeto.
-2. Framework: **Next.js**. Root Directory: raiz do repositório (`.`).
-3. Install Command: `npm ci`. Build Command: `npm run build`. Output Directory: padrão do Next.js.
-4. Para esta v1, não é necessário configurar variáveis de ambiente. Faça o deploy.
+## Funcionalidades
 
-A versão hospedada inclui checklist, kanban, orçamento, importação de itens/opções e histórico das consultas. Os dados são salvos no navegador de cada usuário; Neon, contas e sincronização ainda não estão conectados. A busca ao vivo permanece desativada e as pesquisas podem ser importadas por CSV/Excel.
+- Conta com e-mail/senha, troca de senha e encerramento de outras sessões.
+- Projetos independentes com orçamento, ambientes e categorias; criação, renomeação e exclusão.
+- Itens, subitens, quantidades, prioridades, especificações e links.
+- Checklist, kanban, filtros, pesquisa e orçamento consolidado, sem duplicar pais/subitens.
+- Compras com valor total, data, loja, forma de pagamento e parcelas; confirmação antes de reabrir.
+- Importação CSV/XLSX/XLS com revisão e mapeamento, validação e deduplicação. Até 5 MB/2.000 linhas por importação; primeira aba.
+- Templates CSV/Excel configuráveis e exportação de itens e ofertas.
+- Comparador de ofertas com fotos, preço, frete, nota e quantidade de reviews, mantendo uma opção atual por produto e as revisões no histórico.
+- Galerias privadas por categoria com upload múltiplo, links, legendas e ampliação. Podem existir antes dos itens.
+- Persistência da conta no Neon, salvamento sequencial com revisão otimista, indicação de erros e proteção contra sobrescrita entre abas/dispositivos.
+- Migração dos dados e imagens do modo local para a conta, sem apagar a origem. Backup/importação JSON dos dados; o backup de dados não inclui as galerias.
+- Assistente contextual real quando configurado. Pesquisa de ofertas via SerpApi quando configurada, com histórico persistido e cotas por conta.
 
-## O que funciona
+## Escopo e limites
 
-- Vários projetos com limite de orçamento independente, ambientes e categorias.
-- Criação, edição e exclusão de itens; subitens; quantidades, prioridades, observações e links.
-- Checklist, pesquisa, filtro de status e kanban com drag and drop ou seletor acessível.
-- Registro de compra com valor total, data, loja, pagamento e parcelas. Ao reabrir uma compra, há confirmação antes de limpar seu registro.
-- Total previsto = quantidade × valor unitário. Itens com subitens consolidam os valores dos filhos, sem duplicar o orçamento.
-- Importação CSV (vírgula ou ponto e vírgula), XLSX e XLS, com revisão, mapeamento de colunas, validação e deduplicação. Limite de 5 MB e 2.000 linhas; somente primeira aba.
-- Importação por CSV colado, com exemplo de um item e dois subitens, revisão e confirmação. A revisão é invalidada ao editar o texto.
-- Template configurável e exportação de CSV ou template Excel.
-- Importação/exportação de opções por item, com nome/modelo, loja, preço, frete, link, data/hora da consulta, nota, quantidade de avaliações, fonte, prazo, observações e foto do produto (`imagem_url`). Template CSV/Excel e pedido de pesquisa pronto para copiar. Duplicados idênticos são ignorados; consultas em novas datas ou com valores diferentes são preservadas.
-- Botão Buscar opções em cada item e no kanban. Comparação com preço mínimo/máximo, nota mínima, quantidade de avaliações, frete grátis, limite de orçamento e ordenação. Exemplos, importadas e busca ao vivo ficam separados. Notas e contagens ausentes nunca são inventadas. O histórico lista as consultas importadas, sem inventar preços anteriores. A comparação mantém uma única opção atual por produto, reconhecido pelo mesmo link (ignorando parâmetros de campanha) ou mesmo nome + loja. As versões anteriores ficam no histórico. A data mais recente prevalece e, em empate, vence a última linha importada. Lojas e modelos diferentes continuam sendo opções separadas. A revisão informa opções novas, atualizações e versões destinadas ao histórico.
-- Persistência local no navegador, quando permitida. A prévia não exige contas ou serviços externos.
+A V1 é pessoal: o mesmo usuário acessa sua conta em vários dispositivos. Convites/colaboração entre contas não foram implementados. O histórico registra consultas realizadas/importadas, sem recuperar preços antigos inexistentes. As parcelas entram integralmente no orçamento e não geram calendário de faturas. A IA não consulta a web nem altera os itens; a busca de ofertas é uma ação separada. Falhas externas não são substituídas por dados fictícios.
 
-## Limites desta etapa
+Os exemplos no comparador/importador ficam explicitamente identificados. Contas novas começam vazias. Login não exige confirmação de e-mail nesta etapa; recuperação por e-mail aguarda uma integração de entrega. Há troca de senha autenticada.
 
-Não há login, sincronização entre dispositivos, conexão com Neon, API de IA ou coleta de histórico real. Há um endpoint de pesquisa de ofertas preparado, mas desativado por padrão e ainda não validado com uma credencial real. A importação de pesquisas feitas fora do app funciona sem credencial. Preços e respostas da IA de exemplo são rotulados como demonstração. A busca na web abre uma busca externa em nova aba. O valor de compra parcelada entra integralmente no orçamento; a v1 não gera calendário de faturas.
+Armazenamento V1: documento JSONB por usuário para projetos/itens/compras/ofertas, tabelas separadas para consultas, galerias, imagens e cotas. Toda operação é autenticada e filtrada pelo usuário da sessão. `database/schema.sql` é a proposta antiga; a migração operacional está em `database/migrations/001_workspace.sql`.
 
-O esquema SQL em `database/schema.sql` é uma proposta para a próxima fase; ainda não foi executado ou integrado. Antes de expor dados multiusuário, a próxima fase deve implementar autenticação e verificação de participação no projeto em todas as operações no servidor. Credenciais de Neon e IA ficam apenas no servidor.
+Limites de proteção: 50 projetos, 5.000 itens por projeto, 20.000 snapshots no documento e até 3 MB por gravação do workspace. Referências: até 24 fotos/categoria e 100 MB/conta, com JPEG preparado em até 2048 px/1,5 MB por imagem. As referências externas dependem de seus links.
 
-## Template
+## Validação
+
+`npm test` cobre regras de importação, moeda, hierarquia, cálculos, comparação, migração e persistência. Os testes de integração usam PostgreSQL em WASM e a biblioteca real de autenticação para conferir isolamento, conflitos, imagens, cotas e troca de senha. OpenAI e SerpApi são substituídos por respostas controladas somente nos testes.
+
+A validação com Neon, credenciais reais dos provedores e domínio publicado deve seguir o checklist em [docs/SETUP.md](docs/SETUP.md). O build não roda migrações nem exige credenciais. O CI executa testes, build e o fluxo pelo navegador. Veja `npm run test:browser` no guia de configuração.
+
+## Contrato de importação de itens
 
 Obrigatórios: `ambiente`, `categoria`, `item`. Opcionais: `id`, `item_pai`, `quantidade`, `valor_previsto_unitario`, `status`, `prioridade`, `valor_pago_total`, `forma_pagamento`, `parcelas`, `data_compra`, `loja`, `link`, `observacoes`.
 
-Datas em AAAA-MM-DD. Status: Planejado, Pesquisando, Comprado, Recebido. Prioridade: Alta, Média, Baixa. Subitens apontam ao ID da linha pai e devem compartilhar seu ambiente e categoria. Compras importadas exigem valor total, data e pagamento. Duplicados são identificados pelo nome, ambiente e categoria. Links aceitam somente HTTP e HTTPS. Valores aceitam notação brasileira ou decimal com ponto.
-
-## Validação realizada
-
-Build Next.js de produção e 32 testes de importação, moeda, hierarquia, cálculos, exportação, filtros de ofertas, metadados ausentes, normalização da fonte e bloqueio do endpoint sem configuração. No navegador: registro de compra com parcelas, persistência após recarregar, movimentação no kanban e importação CSV completa (colar/usar exemplo → revisar → confirmar → itens/subitens e orçamento). Também foram confirmados o bloqueio de quantidade inválida, a rejeição de duplicados e a persistência dos itens importados após recarregar. O exemplo adiciona R$ 379,50 sem duplicar o pai. A leitura de um XLSX real foi validada diretamente; a seleção de arquivo no navegador não pôde ser concluída por timeout do ambiente de testes.
-
-## Próxima fase
-
-1. Importar este repositório na Vercel e testar a experiência hospedada.
-2. Implementar autenticação e armazenamento Neon com importação transacional e autorização por projeto.
-3. Conectar IA e busca com fontes, data de coleta, moeda, frete e modelo exato; persistir snapshots para construir histórico real.
-4. Adicionar cotas, monitoramento, compartilhamento e colaboração, conforme o uso esperado.
-
-## Pesquisa de ofertas por item
-
-O endpoint `POST /api/shopping/search` recebe `query` e `itemId`. O adaptador foi preparado para Google Shopping via SerpApi, com pesquisa brasileira e uma consulta nova a cada solicitação. A chave fica somente no servidor. Configuração para revisão local/privada: `SERPAPI_API_KEY` e `SHOPPING_SEARCH_ENABLED=true`. O endpoint responde 503 enquanto não estiver configurado. Não foi executada uma busca com credencial real; somente parsing, filtros e o estado não configurado foram testados.
-
-A busca só acontece ao pressionar Buscar ofertas; mudar os filtros trabalha nos resultados já recebidos. Falhas não são substituídas por ofertas fictícias. A prévia inline não faz chamadas de API e usa um adaptador próprio; a aba Busca ao vivo explica essa limitação e permite abrir pesquisa externa. O botão Buscar opções foi verificado em um iframe isolado, incluindo preço máximo, nota mínima, frete grátis, quantidade de avaliações e estado vazio.
-
-Antes de ativar em produção, implementar autenticação e cotas duráveis por usuário. A autorização por origem não substitui autenticação. Histórico real exige persistir as consultas no banco. A v1 mostra nota agregada e número de reviews, sem os textos individuais. Preços mensais/parcelas e valores explicitamente em moedas estrangeiras não entram no comparador em BRL.
-
-Documentação da fonte usada na implementação: https://serpapi.com/google-shopping-api e https://serpapi.com/shopping-results.
+Datas em AAAA-MM-DD. Status: Planejado, Pesquisando, Comprado, Recebido. Prioridade: Alta, Média, Baixa. Subitens apontam ao ID do pai e herdam ambiente/categoria. Compras importadas exigem valor total, data e pagamento. Duplicados usam nome, ambiente e categoria. Links HTTP/HTTPS. Valores em notação brasileira ou decimal com ponto.
 
 ## Fluxo de pesquisa e importação de opções
 
@@ -86,12 +69,3 @@ As fotos aparecem no comparador, na revisão da importação e no histórico, se
 
 Reimportar o mesmo registro com uma imagem adicionada gera uma versão atualizada da mesma opção e preserva a anterior no histórico, sem duplicar o produto no comparador.
 
-## Galeria de referências por categoria
-
-Use **Referências** no cabeçalho de uma categoria ou **Galerias** no topo do projeto. Cada categoria possui sua própria galeria, isolada por checklist. É possível criar uma categoria com referências antes de cadastrar seus itens. O botão **Adicionar item nesta categoria** abre o cadastro com a categoria preenchida.
-
-Aceita vários arquivos JPG/PNG/WebP por seleção ou arraste, até 10 MB por arquivo e 24 imagens por categoria. O navegador prepara as fotos com até 2048 pixels no lado maior e as salva localmente no IndexedDB, sem ocupar a pequena cota do localStorage usada pelo checklist. Fotos por link HTTPS também são aceitas. Imagens repetidas são ignoradas.
-
-As referências têm legenda editável, ampliação, navegação por anterior/próxima ou setas e remoção com confirmação. Quando existem imagens, miniaturas aparecem acima dos itens da categoria. Fechar a janela ou recarregar mantém as referências neste navegador. As imagens ainda não são sincronizadas com Neon ou entre dispositivos e não são incluídas na exportação CSV dos itens.
-
-Validação da galeria: 32 testes passaram. No navegador, foram conferidos inclusão por link, carregamento das imagens, legenda persistente, ampliação e navegação, troca de categoria, isolamento entre projetos e categoria criada antes de itens com cadastro já preenchido. Um teste de execução no navegador validou a preparação de um arquivo PNG de 4000 × 2500 para JPEG de 2048 × 1280 e o salvamento/leitura no IndexedDB. A caixa nativa de seleção de arquivos não fez parte desse teste automatizado.

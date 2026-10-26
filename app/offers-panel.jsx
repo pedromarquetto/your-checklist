@@ -1,34 +1,427 @@
-'use client';
-import React,{useState,useRef,useEffect} from 'react';
-import {money,safeUrl,offerResearchPrompt} from '../lib/core.mjs';
-import OfferImage from './offer-image.jsx';
-import {demoOffers} from '../lib/demo.mjs';
-import {filterOffers,totalPrice,latestOffers} from '../lib/offers.mjs';
-import {searchOffers,isInlinePreview} from '../lib/shopping-client.mjs';
+"use client";
+import React, { useState, useRef, useEffect } from "react";
+import { money, safeUrl, offerResearchPrompt } from "../lib/core.mjs";
+import OfferImage from "./offer-image.jsx";
+import { demoOffers } from "../lib/demo.mjs";
+import { filterOffers, totalPrice, latestOffers } from "../lib/offers.mjs";
+import { searchOffers, isInlinePreview } from "../lib/shopping-client.mjs";
 
-export default function OffersPanel({item,importedOffers,onChoose,onImport,onTemplate,onExport,initialMode='imported'}){
- const [mode,setMode]=useState(initialMode),[query,setQuery]=useState(item.name),[live,setLive]=useState([]),[observedAt,setObservedAt]=useState(''),[loading,setLoading]=useState(false),[error,setError]=useState(''),[copyNotice,setCopyNotice]=useState('');
- const [filters,setFilters]=useState({minPrice:'',maxPrice:'',minRating:0,minReviews:0,freeShipping:false,withinBudget:false,sort:'price'});
- const abort=useRef(null),requestId=useRef(0);
- useEffect(()=>()=>abort.current?.abort(),[]);
- const change=(name,value)=>setFilters(f=>({...f,[name]:value}));
- const base=mode==='example'?demoOffers(item):mode==='imported'?latestOffers(importedOffers):live;
- const offers=filterOffers(base,{...filters,budget:item.unitBudget});
- const cheapest=[...offers].filter(o=>totalPrice(o)!==null).sort((a,b)=>totalPrice(a)-totalPrice(b))[0]?.id;
- async function search(e){e.preventDefault();abort.current?.abort();const controller=new AbortController();abort.current=controller;const id=++requestId.current;setError('');setLoading(true);setLive([]);setObservedAt('');try{const result=await searchOffers(query,item.id,controller.signal);if(id===requestId.current){setLive(result.offers);setObservedAt(result.observedAt);}}catch(err){if(err.name!=='AbortError'&&id===requestId.current)setError(err.message);}finally{if(id===requestId.current)setLoading(false);}}
- function changeMode(next){abort.current?.abort();requestId.current++;setMode(next);setError('');setLoading(false);}
- const webUrl=`https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query||item.name)}`;
- return <div className="qc-detail-content qc-shopping-panel">
-  <div className="qc-shopping-heading"><div className="qc-eyebrow">ENCONTRE A MELHOR OPÇÃO PARA ESTE ITEM</div><h3>Preço é só parte da escolha.</h3><p>Compare custo, avaliações e condições antes de comprar.</p></div>
-  <section className="qc-research-import"><strong>Traga as opções que você pesquisou.</strong><p>Peça a pesquisa aqui no chat, importe o CSV e compare neste item.</p><div><button className="qc-button qc-primary" onClick={onImport}>↥ Importar opções para este item</button><button className="qc-button" onClick={()=>onTemplate('csv')}>↧ Template CSV</button><button className="qc-button" onClick={()=>onTemplate('xlsx')}>↧ Excel</button><button className="qc-button" disabled={!importedOffers.length} onClick={onExport}>Exportar opções</button></div><details><summary>Pedido pronto para pesquisar com IA</summary><textarea aria-label="Pedido de pesquisa para IA" readOnly rows="7" value={offerResearchPrompt(item)}/><button className="qc-button" onClick={async()=>{try{await navigator.clipboard.writeText(offerResearchPrompt(item));setCopyNotice('Pedido copiado.');}catch{setCopyNotice('Selecione e copie o pedido acima.');}}}>Copiar pedido de pesquisa</button><span role="status">{copyNotice}</span></details></section>
-  <div className="qc-shopping-modes" aria-label="Fonte de ofertas">{[['imported','Importadas'],['example','Exemplos'],['live','Busca ao vivo']].map(([id,label])=><button key={id} aria-pressed={mode===id} onClick={()=>changeMode(id)}>{label}</button>)}</div>
-  {mode==='example'&&<div className="qc-demo-note">Demonstração: preços, notas e quantidades de avaliações são fictícios. Nenhuma loja foi consultada.</div>}
-  {mode==='imported'&&<div className="qc-demo-note">Só uma opção atual por produto: mesmo link ou mesmo nome + loja. Consultas anteriores ficam na aba Histórico. Avaliações e frete desconhecidos permanecem sem informação.</div>}
-  {mode==='live'&&<div className="qc-live-area"><form className="qc-product-query" onSubmit={search}><label className="qc-field"><span>Qual produto você está procurando?</span><input aria-label="Busca de produto" value={query} maxLength={200} onChange={e=>setQuery(e.target.value)} placeholder="Marca, modelo, tamanho, voltagem..."/></label><button className="qc-button qc-primary" disabled={loading||query.trim().length<3||isInlinePreview}>{loading?'Consultando...':'Buscar ofertas'}</button></form>{isInlinePreview&&<div className="qc-demo-note">A busca ao vivo ainda não está conectada à prévia do chat. Você pode abrir a pesquisa na web ou testar os filtros com exemplos.</div>}{error&&<p className="qc-error" role="alert">{error}</p>}{observedAt&&<p className="qc-source-time">Consulta realizada em {new Date(observedAt).toLocaleString('pt-BR')} · dados da fonte, sujeitos a alteração na loja.</p>}</div>}
-  <div className="qc-shopping-filters"><label className="qc-field"><span>Preço mínimo (R$)</span><input aria-label="Preço mínimo" type="number" min="0" step="0.01" value={filters.minPrice} onChange={e=>change('minPrice',e.target.value)} placeholder="Sem mínimo"/></label><label className="qc-field"><span>Preço máximo (R$)</span><input aria-label="Preço máximo" type="number" min="0" step="0.01" value={filters.maxPrice} onChange={e=>change('maxPrice',e.target.value)} placeholder="Sem limite"/></label><label className="qc-field"><span>Avaliação mínima</span><select aria-label="Avaliação mínima" value={filters.minRating} onChange={e=>change('minRating',Number(e.target.value))}><option value="0">Todas as notas</option><option value="4">4 estrelas ou mais</option><option value="4.5">4,5 estrelas ou mais</option><option value="4.8">4,8 estrelas ou mais</option></select></label><label className="qc-field"><span>Quantidade de avaliações</span><select aria-label="Quantidade mínima de avaliações" value={filters.minReviews} onChange={e=>change('minReviews',Number(e.target.value))}><option value="0">Qualquer quantidade</option><option value="50">50 avaliações ou mais</option><option value="100">100 avaliações ou mais</option><option value="500">500 avaliações ou mais</option></select></label><label className="qc-field qc-wide"><span>Ordenar resultados</span><select aria-label="Ordenar ofertas" value={filters.sort} onChange={e=>change('sort',e.target.value)}><option value="price">Menor total com frete informado</option><option value="expensive">Maior preço do produto</option><option value="rating">Melhor avaliação</option><option value="reviews">Mais avaliações</option></select></label><label className="qc-shopping-check"><input type="checkbox" checked={filters.freeShipping} onChange={e=>change('freeShipping',e.target.checked)}/> Apenas frete grátis</label><label className="qc-shopping-check"><input type="checkbox" checked={filters.withinBudget} onChange={e=>change('withinBudget',e.target.checked)}/> Total dentro do previsto</label></div>
-  <div className="qc-offer-results"><span aria-live="polite">{offers.length} de {base.length} opções</span><button className="qc-text-button" onClick={()=>setFilters({minPrice:'',maxPrice:'',minRating:0,minReviews:0,freeShipping:false,withinBudget:false,sort:'price'})}>Limpar filtros</button></div>
-  {offers.map(o=><article key={o.id} className={'qc-offer '+(o.id===cheapest?'best':'')}><div className="qc-offer-layout"><OfferImage src={o.imageUrl} name={o.model}/><div className="qc-offer-body"><div className="qc-offer-title"><strong>{o.store}</strong><small>{o.source==='demo'?'EXEMPLO':o.source==='live'?'CONSULTADO':'IMPORTADO'}{o.id===cheapest?' · MENOR TOTAL INFORMADO':''}</small></div><p>{o.model}</p><div className="qc-offer-rating">{Number.isFinite(o.rating)?<><strong>★ {o.rating.toLocaleString('pt-BR',{minimumFractionDigits:1})}</strong><span> / 5 · {o.reviewCount?.toLocaleString('pt-BR')??'Sem total de'} avaliações{o.source==='demo'?' fictícias':''}</span></>:<span>Avaliação não informada pela fonte</span>}</div><div className="qc-offer-price"><strong>{money(totalPrice(o)??o.price)}</strong><span>{o.shipping===0?'Frete grátis':Number.isFinite(o.shipping)?`${money(o.price)} + ${money(o.shipping)} de frete`:'Preço do produto · frete a confirmar'}</span></div><div className="qc-offer-provenance"><span>Consulta: {o.observedAt?new Date(o.observedAt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):o.date?.split('-').reverse().join('/')}</span>{o.provider&&<span>Fonte: {o.provider}</span>}{o.notes&&<p>{o.notes}</p>}</div><div className="qc-offer-footer"><span>{o.delivery||'Prazo não informado'}</span><button className="qc-button" onClick={()=>onChoose(o)}>Escolher opção</button></div>{o.url&&<a className="qc-text-button" href={safeUrl(o.url)} target="_blank" rel="noopener noreferrer">Ver oferta ↗</a>}</div></div></article>)}
-  {!offers.length&&<div className="qc-shopping-empty"><strong>{base.length?'Nenhuma opção com esses filtros':mode==='live'?'Sua busca começa aqui':'Importe suas primeiras opções'}</strong><p>{base.length?'Tente ampliar a faixa de preço ou reduzir a nota mínima.':mode==='live'?'Informe marca, modelo e características para encontrar opções mais próximas do que você precisa.':'Use o botão Importar opções para este item. O template aceita nome, preço, link, data, avaliações e imagem_url.'}</p></div>}
-  <a className="qc-button qc-full" href={webUrl} target="_blank" rel="noopener noreferrer">Pesquisar este item na web ↗</a><p className="qc-muted">Filtros de preço usam o valor do produto. O total inclui frete quando informado. Notas são agregadas; os textos individuais dos reviews não estão nesta v1.</p><button className="qc-text-button" onClick={onImport}>↥ Importar ofertas e histórico</button>
- </div>;
+export default function OffersPanel({
+  item,
+  importedOffers,
+  onChoose,
+  onImport,
+  onTemplate,
+  onExport,
+  initialMode = "imported",
+  cloud = null,
+  onResults = () => {},
+}) {
+  const [mode, setMode] = useState(initialMode),
+    [query, setQuery] = useState(item.name),
+    [live, setLive] = useState([]),
+    [observedAt, setObservedAt] = useState(""),
+    [loading, setLoading] = useState(false),
+    [error, setError] = useState(""),
+    [copyNotice, setCopyNotice] = useState("");
+  const [filters, setFilters] = useState({
+    minPrice: "",
+    maxPrice: "",
+    minRating: 0,
+    minReviews: 0,
+    freeShipping: false,
+    withinBudget: false,
+    sort: "price",
+  });
+  const abort = useRef(null),
+    requestId = useRef(0);
+  useEffect(() => () => abort.current?.abort(), []);
+  const change = (name, value) => setFilters((f) => ({ ...f, [name]: value }));
+  const base =
+    mode === "example"
+      ? demoOffers(item)
+      : mode === "imported"
+        ? latestOffers(importedOffers)
+        : live;
+  const offers = filterOffers(base, { ...filters, budget: item.unitBudget });
+  const cheapest = [...offers]
+    .filter((o) => totalPrice(o) !== null)
+    .sort((a, b) => totalPrice(a) - totalPrice(b))[0]?.id;
+  async function search(e) {
+    e.preventDefault();
+    abort.current?.abort();
+    const controller = new AbortController();
+    abort.current = controller;
+    const id = ++requestId.current;
+    setError("");
+    setLoading(true);
+    setLive([]);
+    setObservedAt("");
+    try {
+      await cloud?.flush();
+      const result = await searchOffers(query, item.id, controller.signal);
+      if (id === requestId.current) {
+        setLive(result.offers);
+        setObservedAt(result.observedAt);
+        onResults(result.offers);
+      }
+    } catch (err) {
+      if (err.name !== "AbortError" && id === requestId.current)
+        setError(err.message);
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
+  }
+  function changeMode(next) {
+    abort.current?.abort();
+    requestId.current++;
+    setMode(next);
+    setError("");
+    setLoading(false);
+  }
+  const webUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query || item.name)}`;
+  return (
+    <div className="qc-detail-content qc-shopping-panel">
+      <div className="qc-shopping-heading">
+        <div className="qc-eyebrow">ENCONTRE A MELHOR OPÇÃO PARA ESTE ITEM</div>
+        <h3>Preço é só parte da escolha.</h3>
+        <p>Compare custo, avaliações e condições antes de comprar.</p>
+      </div>
+      <section className="qc-research-import">
+        <strong>Traga as opções que você pesquisou.</strong>
+        <p>Peça a pesquisa aqui no chat, importe o CSV e compare neste item.</p>
+        <div>
+          <button className="qc-button qc-primary" onClick={onImport}>
+            ↥ Importar opções para este item
+          </button>
+          <button className="qc-button" onClick={() => onTemplate("csv")}>
+            ↧ Template CSV
+          </button>
+          <button className="qc-button" onClick={() => onTemplate("xlsx")}>
+            ↧ Excel
+          </button>
+          <button
+            className="qc-button"
+            disabled={!importedOffers.length}
+            onClick={onExport}
+          >
+            Exportar opções
+          </button>
+        </div>
+        <details>
+          <summary>Pedido pronto para pesquisar com IA</summary>
+          <textarea
+            aria-label="Pedido de pesquisa para IA"
+            readOnly
+            rows="7"
+            value={offerResearchPrompt(item)}
+          />
+          <button
+            className="qc-button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(offerResearchPrompt(item));
+                setCopyNotice("Pedido copiado.");
+              } catch {
+                setCopyNotice("Selecione e copie o pedido acima.");
+              }
+            }}
+          >
+            Copiar pedido de pesquisa
+          </button>
+          <span role="status">{copyNotice}</span>
+        </details>
+      </section>
+      <div className="qc-shopping-modes" aria-label="Fonte de ofertas">
+        {[
+          ["imported", "Salvas"],
+          ["example", "Exemplos"],
+          ["live", "Busca ao vivo"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            aria-pressed={mode === id}
+            onClick={() => changeMode(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {mode === "example" && (
+        <div className="qc-demo-note">
+          Demonstração: preços, notas e quantidades de avaliações são fictícios.
+          Nenhuma loja foi consultada.
+        </div>
+      )}
+      {mode === "imported" && (
+        <div className="qc-demo-note">
+          Só uma opção atual por produto: mesmo link ou mesmo nome + loja.
+          Consultas anteriores ficam na aba Histórico. Avaliações e frete
+          desconhecidos permanecem sem informação.
+        </div>
+      )}
+      {mode === "live" && (
+        <div className="qc-live-area">
+          <form className="qc-product-query" onSubmit={search}>
+            <label className="qc-field">
+              <span>Qual produto você está procurando?</span>
+              <input
+                aria-label="Busca de produto"
+                value={query}
+                maxLength={200}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Marca, modelo, tamanho, voltagem..."
+              />
+            </label>
+            <button
+              className="qc-button qc-primary"
+              disabled={
+                loading || query.trim().length < 3 || isInlinePreview || !cloud
+              }
+            >
+              {loading ? "Consultando..." : "Buscar ofertas"}
+            </button>
+          </form>
+          {(isInlinePreview || !cloud) && (
+            <div className="qc-demo-note">
+              Entre na conta para usar a busca ao vivo quando o provedor estiver
+              configurado. Você pode importar pesquisas ou abrir a busca
+              externa.
+            </div>
+          )}
+          {error && (
+            <p className="qc-error" role="alert">
+              {error}
+            </p>
+          )}
+          {observedAt && (
+            <p className="qc-source-time">
+              Consulta realizada em{" "}
+              {new Date(observedAt).toLocaleString("pt-BR")} · dados da fonte,
+              sujeitos a alteração na loja.
+            </p>
+          )}
+        </div>
+      )}
+      <div className="qc-shopping-filters">
+        <label className="qc-field">
+          <span>Preço mínimo (R$)</span>
+          <input
+            aria-label="Preço mínimo"
+            type="number"
+            min="0"
+            step="0.01"
+            value={filters.minPrice}
+            onChange={(e) => change("minPrice", e.target.value)}
+            placeholder="Sem mínimo"
+          />
+        </label>
+        <label className="qc-field">
+          <span>Preço máximo (R$)</span>
+          <input
+            aria-label="Preço máximo"
+            type="number"
+            min="0"
+            step="0.01"
+            value={filters.maxPrice}
+            onChange={(e) => change("maxPrice", e.target.value)}
+            placeholder="Sem limite"
+          />
+        </label>
+        <label className="qc-field">
+          <span>Avaliação mínima</span>
+          <select
+            aria-label="Avaliação mínima"
+            value={filters.minRating}
+            onChange={(e) => change("minRating", Number(e.target.value))}
+          >
+            <option value="0">Todas as notas</option>
+            <option value="4">4 estrelas ou mais</option>
+            <option value="4.5">4,5 estrelas ou mais</option>
+            <option value="4.8">4,8 estrelas ou mais</option>
+          </select>
+        </label>
+        <label className="qc-field">
+          <span>Quantidade de avaliações</span>
+          <select
+            aria-label="Quantidade mínima de avaliações"
+            value={filters.minReviews}
+            onChange={(e) => change("minReviews", Number(e.target.value))}
+          >
+            <option value="0">Qualquer quantidade</option>
+            <option value="50">50 avaliações ou mais</option>
+            <option value="100">100 avaliações ou mais</option>
+            <option value="500">500 avaliações ou mais</option>
+          </select>
+        </label>
+        <label className="qc-field qc-wide">
+          <span>Ordenar resultados</span>
+          <select
+            aria-label="Ordenar ofertas"
+            value={filters.sort}
+            onChange={(e) => change("sort", e.target.value)}
+          >
+            <option value="price">Menor total com frete informado</option>
+            <option value="expensive">Maior preço do produto</option>
+            <option value="rating">Melhor avaliação</option>
+            <option value="reviews">Mais avaliações</option>
+          </select>
+        </label>
+        <label className="qc-shopping-check">
+          <input
+            type="checkbox"
+            checked={filters.freeShipping}
+            onChange={(e) => change("freeShipping", e.target.checked)}
+          />{" "}
+          Apenas frete grátis
+        </label>
+        <label className="qc-shopping-check">
+          <input
+            type="checkbox"
+            checked={filters.withinBudget}
+            onChange={(e) => change("withinBudget", e.target.checked)}
+          />{" "}
+          Total dentro do previsto
+        </label>
+      </div>
+      <div className="qc-offer-results">
+        <span aria-live="polite">
+          {offers.length} de {base.length} opções
+        </span>
+        <button
+          className="qc-text-button"
+          onClick={() =>
+            setFilters({
+              minPrice: "",
+              maxPrice: "",
+              minRating: 0,
+              minReviews: 0,
+              freeShipping: false,
+              withinBudget: false,
+              sort: "price",
+            })
+          }
+        >
+          Limpar filtros
+        </button>
+      </div>
+      {offers.map((o) => (
+        <article
+          key={o.id}
+          className={"qc-offer " + (o.id === cheapest ? "best" : "")}
+        >
+          <div className="qc-offer-layout">
+            <OfferImage src={o.imageUrl} name={o.model} />
+            <div className="qc-offer-body">
+              <div className="qc-offer-title">
+                <strong>{o.store}</strong>
+                <small>
+                  {o.source === "demo"
+                    ? "EXEMPLO"
+                    : o.source === "live"
+                      ? "CONSULTADO"
+                      : "IMPORTADO"}
+                  {o.id === cheapest ? " · MENOR TOTAL INFORMADO" : ""}
+                </small>
+              </div>
+              <p>{o.model}</p>
+              <div className="qc-offer-rating">
+                {Number.isFinite(o.rating) ? (
+                  <>
+                    <strong>
+                      ★{" "}
+                      {o.rating.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 1,
+                      })}
+                    </strong>
+                    <span>
+                      {" "}
+                      / 5 ·{" "}
+                      {o.reviewCount?.toLocaleString("pt-BR") ??
+                        "Sem total de"}{" "}
+                      avaliações{o.source === "demo" ? " fictícias" : ""}
+                    </span>
+                  </>
+                ) : (
+                  <span>Avaliação não informada pela fonte</span>
+                )}
+              </div>
+              <div className="qc-offer-price">
+                <strong>{money(totalPrice(o) ?? o.price)}</strong>
+                <span>
+                  {o.shipping === 0
+                    ? "Frete grátis"
+                    : Number.isFinite(o.shipping)
+                      ? `${money(o.price)} + ${money(o.shipping)} de frete`
+                      : "Preço do produto · frete a confirmar"}
+                </span>
+              </div>
+              <div className="qc-offer-provenance">
+                <span>
+                  Consulta:{" "}
+                  {o.observedAt
+                    ? new Date(o.observedAt).toLocaleString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                      })
+                    : o.date?.split("-").reverse().join("/")}
+                </span>
+                {o.provider && <span>Fonte: {o.provider}</span>}
+                {o.notes && <p>{o.notes}</p>}
+              </div>
+              <div className="qc-offer-footer">
+                <span>{o.delivery || "Prazo não informado"}</span>
+                <button className="qc-button" onClick={() => onChoose(o)}>
+                  Escolher opção
+                </button>
+              </div>
+              {o.url && (
+                <a
+                  className="qc-text-button"
+                  href={safeUrl(o.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Ver oferta ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </article>
+      ))}
+      {!offers.length && (
+        <div className="qc-shopping-empty">
+          <strong>
+            {base.length
+              ? "Nenhuma opção com esses filtros"
+              : mode === "live"
+                ? "Sua busca começa aqui"
+                : "Importe suas primeiras opções"}
+          </strong>
+          <p>
+            {base.length
+              ? "Tente ampliar a faixa de preço ou reduzir a nota mínima."
+              : mode === "live"
+                ? "Informe marca, modelo e características para encontrar opções mais próximas do que você precisa."
+                : "Use o botão Importar opções para este item. O template aceita nome, preço, link, data, avaliações e imagem_url."}
+          </p>
+        </div>
+      )}
+      <a
+        className="qc-button qc-full"
+        href={webUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Pesquisar este item na web ↗
+      </a>
+      <p className="qc-muted">
+        Filtros de preço usam o valor do produto. O total inclui frete quando
+        informado. Notas são agregadas; os textos individuais dos reviews não
+        estão nesta v1.
+      </p>
+      <button className="qc-text-button" onClick={onImport}>
+        ↥ Importar ofertas e histórico
+      </button>
+    </div>
+  );
 }

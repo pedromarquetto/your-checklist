@@ -1,2 +1,6 @@
-import ChecklistApp from './checklist-app';
-export default function Page() {return <ChecklistApp />;}
+import AccountShell from "./account-shell.jsx";
+import { configured } from "../lib/server/db.mjs";
+export const dynamic = "force-dynamic";
+export default function Page() {
+  return <AccountShell configured={configured()} />;
+}

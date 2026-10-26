@@ -1,119 +1,2659 @@
-'use client';
-import React, {useState, useEffect, useRef} from 'react';
-import * as XLSX from 'xlsx';
-import {STATUSES,METHODS,FIELDS,OFFER_FIELDS,OFFER_COLUMNS,mapOfferColumns,offersToRows,uid,money,normalize,today,numeric,parseCSV,safeUrl,leafItems,itemCost,totals,prepareImport,prepareOffers,csvString} from '../lib/core.mjs';
-import {DEMO} from '../lib/demo.mjs';
-import {summarizeOfferImport} from '../lib/offers.mjs';
-import OffersPanel from './offers-panel.jsx';
-import OfferHistory from './offer-history.jsx';
-import OfferImage from './offer-image.jsx';
-import CategoryGallery,{useCategoryGalleries,CategoryReferenceStrip} from './category-gallery.jsx';
-import {categoryNames} from '../lib/category-gallery.mjs';
+"use client";
+import React, { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
+import {
+  STATUSES,
+  METHODS,
+  FIELDS,
+  OFFER_FIELDS,
+  OFFER_COLUMNS,
+  mapOfferColumns,
+  offersToRows,
+  uid,
+  money,
+  normalize,
+  today,
+  numeric,
+  parseCSV,
+  safeUrl,
+  leafItems,
+  itemCost,
+  totals,
+  prepareImport,
+  prepareOffers,
+  csvString,
+} from "../lib/core.mjs";
+import { summarizeOfferImport } from "../lib/offers.mjs";
+import OffersPanel from "./offers-panel.jsx";
+import OfferHistory from "./offer-history.jsx";
+import OfferImage from "./offer-image.jsx";
+import CategoryGallery, {
+  useCategoryGalleries,
+  CategoryReferenceStrip,
+} from "./category-gallery.jsx";
+import { categoryNames, manageLocalGallery } from "../lib/category-gallery.mjs";
+import {
+  emptyWorkspace,
+  manageStructure,
+  addLiveOffers,
+} from "../lib/workspace-core.mjs";
+import ProjectSettings from "./project-settings.jsx";
+import AssistantPanel from "./assistant-panel.jsx";
 
-const STORAGE='your-check-list-ai-v1';
-const clone=value=>JSON.parse(JSON.stringify(value));
-const roomSymbols={'Cozinha':'♧','Sala de estar':'▱','Quarto':'☾','Banheiro':'◒','Escritório':'▤','Mala':'▣','Praia':'☀','Mercado':'▧'};
-const statusClass=status=>({Planejado:'planned',Pesquisando:'research',Comprado:'bought',Recebido:'delivered'}[status]);
-const isBought=item=>['Comprado','Recebido'].includes(item.status);
-const download=(name,content,type='text/csv;charset=utf-8')=>{const url=URL.createObjectURL(new Blob([content],{type}));const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),3000);};
-const toRows=items=>items.map(i=>({id:i.id,ambiente:i.room,categoria:i.category,item:i.name,item_pai:i.parentId||'',quantidade:i.qty,valor_previsto_unitario:i.unitBudget,status:i.status,prioridade:i.priority,valor_pago_total:i.paidTotal||'',forma_pagamento:i.paymentMethod,parcelas:i.installments,data_compra:i.purchaseDate,loja:i.store,link:i.url,observacoes:i.notes}));
-function Field({label,children,wide=false}){return <label className={'qc-field '+(wide?'qc-wide':'')}><span>{label}</span>{children}</label>;}
-function Badge({status}){return <span className={'qc-badge '+statusClass(status)}><span aria-hidden="true">●</span>{status}</span>;}
-function ProductArt({name,small=false}){const lower=normalize(name);const kind=/geladeira/.test(lower)?'fridge':/forno|cooktop/.test(lower)?'oven':/sofa|cadeira/.test(lower)?'chair':/prato|copo/.test(lower)?'plate':'box';return <span className={`qc-art ${kind} ${small?'small':''}`} aria-hidden="true"><span/><i/></span>;}
-
-export default function ChecklistApp({initialItemId=null,initialDetailTab='details'}={}){
- const [data,setData]=useState(()=>clone(DEMO)),[ready,setReady]=useState(false),[projectId,setProjectId]=useState('apartment'),[room,setRoom]=useState('Cozinha'),[view,setView]=useState('checklist'),[search,setSearch]=useState(''),[statusFilter,setStatusFilter]=useState('Todos'),[sort,setSort]=useState('category'),[modal,setModal]=useState(null),[selectedId,setSelectedId]=useState(initialItemId),[detailTab,setDetailTab]=useState(initialDetailTab),[expanded,setExpanded]=useState(new Set(['cabinet'])),[toast,setToast]=useState(''),[fileRows,setFileRows]=useState([]),[fileName,setFileName]=useState(''),[mapping,setMapping]=useState({}),[importKind,setImportKind]=useState('items'),[importError,setImportError]=useState(''),[dropId,setDropId]=useState(null),[aiMessage,setAiMessage]=useState(''),[aiReplies,setAiReplies]=useState([]),[reading,setReading]=useState(false);
- const rootRef=useRef(null),fileRef=useRef(null),lastFocus=useRef(null),toastTimer=useRef(null);
- const [importSource,setImportSource]=useState('file'),[csvDraft,setCsvDraft]=useState(''),[importItemId,setImportItemId]=useState(null);
- const [overlayHeight,setOverlayHeight]=useState(0);
- useEffect(()=>{if(!modal&&!selectedId){setOverlayHeight(0);return;}const target=rootRef.current?.querySelector(modal?'.qc-modal':'.qc-detail-content');if(!target)return;const measure=()=>setOverlayHeight(Math.ceil(target.getBoundingClientRect().height)+(modal?150:400));measure();const observer=new ResizeObserver(measure);observer.observe(target);return()=>observer.disconnect();},[modal,selectedId,detailTab]);
- const notify=message=>{setToast(message);clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToast(''),3800);};
- useEffect(()=>{try{const saved=localStorage.getItem(STORAGE);if(saved){const parsed=JSON.parse(saved);if(parsed.version===1&&Array.isArray(parsed.projects)&&parsed.items)setData(parsed);}}catch{}setReady(true);},[]);
- useEffect(()=>{if(ready)try{localStorage.setItem(STORAGE,JSON.stringify(data));}catch{notify('O navegador bloqueou o salvamento local. As alterações duram nesta sessão.');}},[data,ready]);
- useEffect(()=>()=>clearTimeout(toastTimer.current),[]);
- useEffect(()=>{if(!modal&&!selectedId)return;lastFocus.current=document.activeElement;const panel=rootRef.current?.querySelector('[role="dialog"]');const first=panel?.querySelector('button,input,select,textarea,a[href]');first?.focus();const key=e=>{if(e.key==='Escape'){setModal(null);setSelectedId(null);}if(e.key==='Tab'&&panel){const all=[...panel.querySelectorAll('button:not(:disabled),input:not(:disabled),select,textarea,a[href]')].filter(x=>x.offsetParent!==null);const first=all[0],last=all.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}};document.addEventListener('keydown',key);return()=>{document.removeEventListener('keydown',key);lastFocus.current?.focus?.();};},[modal,selectedId]);
- const project=data.projects.find(p=>p.id===projectId)||data.projects[0],items=data.items[project.id]||[],selected=items.find(i=>i.id===selectedId),stats=totals(items),rooms=[...new Set([...items.map(i=>i.room),...(project.rooms||[])])],progress=stats.count?Math.round(stats.bought/stats.count*100):0;
- const gallery=useCategoryGalleries(project.id);
- const galleryCategories=categoryNames(items,gallery.records);
- const galleryPhotos=category=>gallery.records.find(entry=>normalize(entry.category)===normalize(category))?.photos||[];
- const importItem=items.find(i=>i.id===importItemId);
- const scoped=items.filter(i=>(room==='Todos'||i.room===room)&&(!search||normalize(i.name+' '+i.category+' '+i.notes).includes(normalize(search)))&&(statusFilter==='Todos'||i.status===statusFilter));
- const visible=scoped.filter(i=>!i.parentId||!scoped.some(p=>p.id===i.parentId));
- const sorted=[...visible].sort((a,b)=>sort==='price'?itemCost(a,items)-itemCost(b,items):sort==='priority'?['Alta','Média','Baixa'].indexOf(a.priority)-['Alta','Média','Baixa'].indexOf(b.priority):a.category.localeCompare(b.category,'pt-BR'));
- const groups=[...new Set(sorted.map(i=>i.category))];
- const openGallery=(category=groups[0]||galleryCategories[0]||'')=>{setSelectedId(null);setModal({type:'gallery',category});};
- const changeItems=fn=>setData(d=>({...d,items:{...d.items,[project.id]:fn(d.items[project.id]||[])}}));
- const patch=(id,values)=>changeItems(all=>all.map(i=>i.id===id?{...i,...values}:i));
- const setProject=id=>{setProjectId(id);setRoom('Todos');setSearch('');setStatusFilter('Todos');setSelectedId(null);setView('checklist');};
- const openItem=(id,tab='details')=>{setSelectedId(id);setDetailTab(tab);setModal(null);};
- const newItem=(parentId=null)=>setModal({type:'item',parentId});
- const purchase=(item,after='Comprado')=>{setSelectedId(null);setModal({type:'purchase',id:item.id,after});};
- const move=(item,status)=>{if(items.some(c=>c.parentId===item.id))return;if(['Comprado','Recebido'].includes(status)&&!item.purchaseDate)purchase(item,status);else if(!['Comprado','Recebido'].includes(status)&&isBought(item)){setSelectedId(null);setModal({type:'reopen',id:item.id,status});}else patch(item.id,{status});};
- const toggle=item=>isBought(item)?move(item,'Planejado'):purchase(item);
- const openImport=(options={})=>{const {kind='items',itemId=null}=options;setSelectedId(null);setFileRows([]);setFileName('');setMapping({});setImportError('');setImportKind(kind);setImportItemId(itemId);setImportSource('file');setCsvDraft('');setModal({type:'import'});};
- function closeImport(){setModal(null);if(importItemId){setSelectedId(importItemId);setDetailTab('offers');}}
- function reviewImport(rows,name){if(!rows.length)throw new Error('A planilha está vazia ou sem cabeçalhos.');if(rows.length>2000)throw new Error('A prévia aceita até 2.000 linhas por importação.');const cols=Object.keys(rows[0]);const map=importKind==='offers'?mapOfferColumns(cols):{};if(importKind==='items')FIELDS.forEach(([key,label])=>{map[key]=cols.find(c=>normalize(c)===normalize(key)||normalize(c)===normalize(label))||'';});setFileName(name);setMapping(map);setFileRows(rows);}
- function switchImportSource(source){setImportSource(source);setFileRows([]);setImportError('');setFileName('');}
- function changeImportKind(kind){if(kind!=='offers')setImportItemId(null);setImportKind(kind);setFileRows([]);setImportError('');setCsvDraft('');setFileName('');}
- function reviewCSV(text=csvDraft){setImportError('');setFileRows([]);try{if(new TextEncoder().encode(text).length>5*1024*1024)throw new Error('Cole um CSV de até 5 MB.');reviewImport(parseCSV(text),'CSV colado');}catch(error){setImportError(error.message||'Não foi possível ler o CSV.');}}
- function exampleCSV(){const sample=importKind==='items'?csvString([
- {id:'cafe-grupo',ambiente:'Cozinha',categoria:'Cantinho do café',item:'Kit café da manhã',quantidade:1,valor_previsto_unitario:0,status:'Planejado'},
- {id:'cafe-maquina',item_pai:'cafe-grupo',ambiente:'Cozinha',categoria:'Cantinho do café',item:'Cafeteira elétrica',quantidade:1,valor_previsto_unitario:279.9,status:'Planejado'},
- {id:'cafe-xicaras',item_pai:'cafe-grupo',ambiente:'Cozinha',categoria:'Cantinho do café',item:'Xícaras de cerâmica',quantidade:4,valor_previsto_unitario:24.9,status:'Planejado'}
- ],['id','item_pai','ambiente','categoria','item','quantidade','valor_previsto_unitario','status']):offerExampleCSV();setImportSource('paste');setCsvDraft(sample);reviewCSV(sample);}
- async function readFile(file){if(!file)return;setImportError('');setFileRows([]);setFileName(file.name);if(file.size>5*1024*1024){setImportError('Envie um arquivo de até 5 MB.');return;}setReading(true);try{let rows;if(/\.csv$/i.test(file.name))rows=parseCSV(await file.text());else if(/\.(xlsx|xls)$/i.test(file.name)){const book=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{defval:'',raw:false,dateNF:'yyyy-mm-dd'});}else throw new Error('Formato não suportado. Use CSV, XLSX ou XLS.');reviewImport(rows,file.name);}catch(error){setImportError(error.message||'Não foi possível ler o arquivo.');}finally{setReading(false);}}
- const importResult=fileRows.length?(importKind==='items'?prepareImport(fileRows,mapping,items):prepareOffers(fileRows,items,{mapping,itemId:importItemId,existing:data.offers})):null;
- const offerImportSummary=importKind==='offers'&&importResult?summarizeOfferImport(data.offers,importResult.offers):null;
- function confirmImport(){if(!importResult||importResult.errors.length)return;if(importKind==='items'){changeItems(all=>[...all,...importResult.items]);notify(`${importResult.items.length} itens importados.`);}else{setData(d=>({...d,offers:[...d.offers,...importResult.offers]}));notify(`${importResult.offers.length} consultas importadas. ${offerImportSummary.newOptions} ${offerImportSummary.newOptions===1?'nova opção':'novas opções'} · ${offerImportSummary.updatedOptions} ${offerImportSummary.updatedOptions===1?'opção atualizada':'opções atualizadas'}. Anteriores preservadas no histórico.`);const target=importItemId||([...new Set(importResult.offers.map(o=>o.itemId))].length===1?importResult.offers[0]?.itemId:null);if(target){setSelectedId(target);setDetailTab('offers');}}setModal(null);}
- function exportItems(){download(`${project.name.toLowerCase().replaceAll(' ','-')}.csv`,csvString(toRows(items),FIELDS.map(f=>f[0])));notify('Checklist exportado.');}
- function offerTemplateDownload(format='csv',target=importItem){const rows=(target?[target]:leafItems(items)).map(i=>Object.fromEntries(OFFER_FIELDS.map(key=>[key,({item_id:i.id,item:i.name,ambiente:i.room,categoria:i.category,moeda:'BRL'})[key]||''])));if(format==='xlsx'){const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,XLSX.utils.json_to_sheet(rows,{header:OFFER_FIELDS}),'Opções');XLSX.writeFile(book,'template-opcoes.xlsx');}else download('template-opcoes.csv',csvString(rows,OFFER_FIELDS));}
- function offerExampleCSV(){const i=importItem||leafItems(items)[0];if(!i)return csvString([],OFFER_FIELDS);const day=today();const yesterday=new Date(new Date(day+'T12:00:00Z').getTime()-86400000).toISOString().slice(0,10);const common={item_id:i.id,item:i.name,ambiente:i.room,categoria:i.category,moeda:'BRL',fonte:'Exemplo fictício',observacoes:'Dados inventados somente para testar a importação.'};const rows=[{...common,nome:'Modelo A (EXEMPLO)',loja:'Loja fictícia A',preco:3890,frete:99.9,data_consulta:yesterday,link:'https://example.com/produto-a',nota:4.6,avaliacoes:200},{...common,nome:'Modelo A (EXEMPLO)',loja:'Loja fictícia A',preco:3590,frete:99.9,data_consulta:day,link:'https://example.com/produto-a',nota:4.6,avaliacoes:210},{...common,nome:'Modelo B (EXEMPLO)',loja:'Loja fictícia B',preco:3780,frete:0,data_consulta:day,link:'https://example.com/produto-b',nota:4.8,avaliacoes:420}];return csvString(rows,OFFER_FIELDS);}
- function templateDownload(format='csv'){const cols=(data.templateFields||FIELDS.map(f=>f[0]));const rows=[{id:'cozinha-001',ambiente:'Cozinha',categoria:'Eletrodomésticos',item:'Geladeira',quantidade:1,valor_previsto_unitario:4200,status:'Planejado',prioridade:'Alta',parcelas:1,observacoes:'220 V; conferir medidas'}];if(format==='xlsx'){const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,XLSX.utils.json_to_sheet(rows.map(row=>Object.fromEntries(cols.map(key=>[key,row[key]??'']))),{header:cols}),'Itens');XLSX.writeFile(book,'template-your-checklist.xlsx');}else download('template-your-checklist.csv',csvString(rows,cols));}
- function saveItem(e){e.preventDefault();const f=new FormData(e.currentTarget);const parent=items.find(i=>i.id===modal.parentId);const values={name:String(f.get('name')).trim(),room:parent?.room||String(f.get('room')).trim(),category:parent?.category||String(f.get('category')).trim(),qty:Number(f.get('qty')),unitBudget:Number(f.get('unitBudget')),priority:f.get('priority'),notes:f.get('notes')||'',url:safeUrl(f.get('url'))};if(!values.name||!values.room||!values.category||!Number.isInteger(values.qty)||values.qty<1||!Number.isFinite(values.unitBudget)||values.unitBudget<0)return;if(f.get('url')&&!values.url){notify('Informe um link http:// ou https:// válido.');return;}const editing=modal.editId;if(editing){changeItems(all=>all.map(i=>i.id===editing?{...i,...values}:i.parentId===editing?{...i,room:values.room,category:values.category}:i));notify('Item atualizado.');}else{changeItems(all=>[...all,{id:uid(),...values,status:'Planejado',parentId:parent?.id||null,paidTotal:0,paymentMethod:'',installments:1,purchaseDate:'',store:''}]);if(parent)setExpanded(new Set([...expanded,parent.id]));notify(parent?'Subitem adicionado.':'Item adicionado.');}setModal(null);}
- function savePurchase(e){e.preventDefault();const f=new FormData(e.currentTarget);patch(modal.id,{status:modal.after,paidTotal:Number(f.get('paidTotal')),paymentMethod:f.get('method'),installments:f.get('method')==='Cartão de crédito'?Number(f.get('installments')):1,purchaseDate:f.get('date'),store:String(f.get('store')||''),url:safeUrl(f.get('url')),notes:String(f.get('notes')||'')});setModal(null);notify('Compra registrada. Mais um passo para o seu projeto!');}
- function deleteItem(id){const ids=new Set([id]);let count=0;do{count=ids.size;items.forEach(i=>{if(ids.has(i.parentId))ids.add(i.id);});}while(ids.size>count);changeItems(all=>all.filter(i=>!ids.has(i.id)));setData(d=>({...d,offers:d.offers.filter(o=>!ids.has(o.itemId))}));setModal(null);setSelectedId(null);notify('Item removido.');}
- const Row=({item,depth=0})=>{const children=scoped.filter(c=>c.parentId===item.id);const allChildren=items.filter(c=>c.parentId===item.id);const isParent=allChildren.length>0;return <React.Fragment key={item.id}><div className={'qc-item-row '+(depth?'qc-child':'')} style={{'--depth':depth}}>
- <div className="qc-item-main">{isParent?<button className="qc-expand" aria-label={expanded.has(item.id)?'Recolher subitens':'Expandir subitens'} onClick={()=>{const next=new Set(expanded);next.has(item.id)?next.delete(item.id):next.add(item.id);setExpanded(next);}}>{expanded.has(item.id)?'⌄':'›'}</button>:<input className="qc-check" type="checkbox" aria-label={`Registrar compra de ${item.name}`} checked={isBought(item)} onChange={()=>toggle(item)}/>}{!depth&&<ProductArt name={item.name} small/>}<button className="qc-item-name" onClick={()=>openItem(item.id)}><strong className={isBought(item)?'qc-done':''}>{item.name}</strong><span>{isParent?`${allChildren.length} subitens · total consolidado`:item.priority==='Alta'?'Prioridade alta':isBought(item)?`${item.paymentMethod}${item.installments>1?' · '+item.installments+'x':''}`:item.notes?'Ver especificações':item.room}</span></button></div>
- <span className="qc-qty">{isParent?'—':`${item.qty} un.`}</span><span className="qc-price">{money(itemCost(item,items))}{isBought(item)&&!isParent&&<small>pago {money(item.paidTotal)}</small>}</span><div className="qc-row-status">{isParent?<span className="qc-muted">{leafItems(allChildren).filter(isBought).length}/{leafItems(allChildren).length} concluídos</span>:<button className="qc-plain" aria-label={`Alterar status de ${item.name}`} onClick={()=>openItem(item.id)}><Badge status={item.status}/></button>}</div><button className="qc-more" aria-label={`Abrir ${item.name}`} onClick={()=>openItem(item.id)}>↗</button>{!isParent&&<button className="qc-find-options" aria-label={`Buscar opções para ${item.name}`} onClick={()=>openItem(item.id,'offers')}>✧ Buscar opções <span>Preço · avaliações · frete ↗</span></button>}</div>{expanded.has(item.id)&&children.map(c=><Row key={c.id} item={c} depth={depth+1}/>)}</React.Fragment>;};
-
-
- const suggested=project.id==='beach'?[['Repelente','Mala','Cuidados pessoais',35],['Sacos para lixo','Mercado','Básicos',12],['Toalha de praia','Mala','Conforto',70]]:[['Escorredor de louça','Cozinha','Utensílios e básicos',120],['Lixeira com pedal','Cozinha','Utensílios e básicos',150],['Filtro de água','Cozinha','Eletrodomésticos',480]];
- function addSuggestion(s){if(items.some(i=>normalize(i.name)===normalize(s[0])))return;changeItems(all=>[...all,{id:uid(),name:s[0],room:s[1],category:s[2],qty:1,unitBudget:s[3],status:'Planejado',priority:'Média',parentId:null,paidTotal:0,paymentMethod:'',installments:1,purchaseDate:'',store:'',url:'',notes:'Sugestão demonstrativa. Revise a necessidade e o orçamento.'}]);notify('Sugestão adicionada ao checklist.');}
- function askAI(e){e.preventDefault();if(!aiMessage.trim())return;setAiReplies([...aiReplies,{question:aiMessage,answer:`No seu projeto, há ${stats.count-stats.bought} itens pendentes. Eu começaria pelos itens de prioridade alta e conferiria medidas, voltagem e prazo de entrega antes de comparar o preço com frete. Seu saldo de orçamento é ${money(project.budget-stats.paid)}. Esta resposta é uma demonstração; a pesquisa com IA será conectada na próxima etapa.`}]);setAiMessage('');}
-
- return <div className={'qc-app '+(selected?'qc-detail-open':'')} id="qc-product" ref={rootRef} style={overlayHeight?{minHeight:Math.max(960,overlayHeight)}:undefined}>
- <aside className="qc-sidebar"><a className="qc-brand" href="#" onClick={e=>{e.preventDefault();setView('checklist');}}><span className="qc-logo">✓</span><span>your checklist<span className="qc-brand-ai">AI</span></span></a><div className="qc-workspace"><span className="qc-avatar">P</span><span>Meu espaço pessoal<small>Organize o que vem a seguir</small></span></div><div className="qc-side-label">PLANEJAR, COMPRAR, CONQUISTAR</div><button className={'qc-nav '+(view!=='assistant'?'active':'')} onClick={()=>setView('checklist')}><span>▤</span>Meus checklists<span className="qc-nav-count">{data.projects.length}</span></button><button className={'qc-nav '+(view==='assistant'?'active':'')} onClick={()=>setView('assistant')}><span>✧</span>Assistente IA<span className="qc-beta">DEMO</span></button><div className="qc-side-section"><span>PROJETOS</span><button aria-label="Novo checklist" onClick={()=>setModal({type:'project'})}>＋</button></div>{data.projects.map(p=><button key={p.id} className={'qc-project-nav '+(project.id===p.id?'selected':'')} onClick={()=>setProject(p.id)}><span className={'qc-project-symbol '+p.color}>{p.icon}</span><span>{p.name}</span>{project.id===p.id&&<span className="qc-selected-dot"/>}</button>)}<button className="qc-mobile-project" aria-label="Criar novo checklist" onClick={()=>setModal({type:'project'})}>＋</button><button className="qc-create-link" onClick={()=>setModal({type:'project'})}>＋ Criar checklist</button><div className="qc-sidebar-bottom"><div className="qc-small-plant" aria-hidden="true">♧</div><strong>Grandes planos.<br/>Pequenos checklists.</strong><p>Do primeiro apê ao próximo destino.</p><button className="qc-nav" onClick={()=>setModal({type:'template'})}><span>▦</span>Templates de importação</button><div className="qc-user"><span className="qc-avatar mini">P</span><span>Meu planejamento<small>Prévia pessoal</small></span><span>⌄</span></div></div></aside>
- <div className="qc-main"><header className="qc-topbar"><span>Meus checklists <span className="qc-slash">/</span> <strong>{project.name}</strong></span><span className="qc-local"><span/> Salvo neste navegador</span></header><main className="qc-content"><div className="qc-heading"><div><div className="qc-eyebrow">CADA DETALHE, NO SEU LUGAR</div><h1>{project.name}<span className="qc-title-dot">.</span></h1><p>{project.description}</p></div><div className="qc-heading-actions"><button className="qc-button" onClick={()=>openGallery()}>▧ Galerias</button><button className="qc-button" onClick={openImport}><span>↥</span> Importar planilha</button><button className="qc-button qc-primary" onClick={()=>newItem()}><span>＋</span> Novo item</button></div></div>
- <div className="qc-metrics"><div className="qc-metric"><span>Seu progresso</span><div className="qc-metric-number">{stats.bought}<small> / {stats.count} itens</small><b>{progress}%</b></div><div className="qc-progress"><i style={{width:`${progress}%`}}/></div></div><button className="qc-metric qc-metric-button" onClick={()=>setModal({type:'budget'})}><span>Orçamento do projeto <span>↗</span></span><div className="qc-metric-number">{money(project.budget)}</div><small>Planejado: {money(stats.planned)}</small></button><div className="qc-metric"><span>Já investido</span><div className="qc-metric-number">{money(stats.paid)}</div><small>{stats.bought} compras registradas</small></div><div className="qc-metric"><span>Saldo do orçamento</span><div className={'qc-metric-number '+(project.budget-stats.paid<0?'qc-negative':'qc-green')}>{money(project.budget-stats.paid)}</div><small>{stats.planned>project.budget?'Planejamento acima do orçamento':'Cada compra, uma conquista'}</small></div></div>
- <nav className="qc-rooms" aria-label="Ambientes"><button className={room==='Todos'?'active':''} onClick={()=>setRoom('Todos')}>▦ <span>Todos os ambientes</span></button>{rooms.map(r=><button key={r} className={room===r?'active':''} onClick={()=>setRoom(r)}><span className="qc-room-symbol">{roomSymbols[r]||'◇'}</span>{r}<small>{leafItems(items.filter(i=>i.room===r)).length}</small></button>)}<button className="qc-room-add" aria-label="Adicionar ambiente" onClick={()=>setModal({type:'room'})}>＋</button></nav>
- <div className="qc-viewline"><div className="qc-view-tabs" aria-label="Visualização">{[['checklist','☷','Checklist'],['kanban','▥','Kanban'],['budget','◴','Orçamento'],['assistant','✧','IA']].map(([id,icon,label])=><button key={id} className={view===id?'active':''} aria-pressed={view===id} onClick={()=>setView(id)}><span>{icon}</span>{label}</button>)}</div><button className="qc-export" onClick={exportItems}>↧ <span>Exportar</span></button></div>
- {view!=='assistant'&&<div className="qc-toolbar"><label className="qc-search"><span>⌕</span><input aria-label="Buscar itens" placeholder="Buscar um item no seu checklist..." value={search} onChange={e=>setSearch(e.target.value)}/>{search&&<button aria-label="Limpar busca" onClick={()=>setSearch('')}>×</button>}</label><select aria-label="Filtrar por status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="Todos">Todos os status</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select><select aria-label="Ordenar itens" value={sort} onChange={e=>setSort(e.target.value)}><option value="category">Por categoria</option><option value="price">Menor valor previsto</option><option value="priority">Maior prioridade</option></select></div>}
- {view==='checklist'&&<section className="qc-list" aria-label="Checklist de compras"><div className="qc-table-head"><span>ITEM / ESPECIFICAÇÕES</span><span>QTD.</span><span>PREVISTO</span><span>STATUS</span><span/></div>{groups.map(category=><div key={category} className="qc-category"><div className="qc-category-head"><span className="qc-category-mark">{category.includes('Eletro')?'▣':category.includes('marcenaria')?'▧':'◇'}</span><strong>{category}</strong><span className="qc-cat-count">{leafItems(scoped.filter(i=>i.category===category)).length}</span><span className="qc-category-total">{money(leafItems(scoped.filter(i=>i.category===category)).reduce((sum,i)=>sum+i.qty*i.unitBudget,0))}</span><button className="qc-category-reference" aria-label={`Referências de ${category}`} onClick={()=>openGallery(category)}>▧ Referências{galleryPhotos(category).length?` (${galleryPhotos(category).length})`:""}</button></div><CategoryReferenceStrip photos={galleryPhotos(category)} onOpen={()=>openGallery(category)}/>{sorted.filter(i=>i.category===category).map(i=><Row key={i.id} item={i}/>)}</div>)}{!groups.length&&<div className="qc-empty"><span>☷</span><h3>{search||statusFilter!=='Todos'?'Nenhum item com esses filtros':'Espaço para os seus planos'}</h3><p>Adicione um item ou importe sua primeira planilha.</p><button className="qc-button qc-primary" onClick={()=>newItem()}>＋ Adicionar item</button></div>}<button className="qc-add-row" onClick={()=>newItem()}>＋ Adicionar item{room!=='Todos'?` em ${room}`:''}</button></section>}
- {view==='kanban'&&<section className="qc-kanban" aria-label="Kanban de compras">{STATUSES.map(status=><div key={status} className={'qc-kanban-column '+(dropId===status?'dragover':'')} onDragOver={e=>{e.preventDefault();setDropId(status);}} onDragLeave={()=>setDropId(null)} onDrop={e=>{e.preventDefault();const i=items.find(x=>x.id===e.dataTransfer.getData('text/plain'));if(i)move(i,status);setDropId(null);}}><h3><span className={'qc-dot '+statusClass(status)}/>{status}<small>{leafItems(scoped).filter(i=>i.status===status).length}</small></h3>{leafItems(scoped).filter(i=>i.status===status).map(i=><article key={i.id} draggable onDragStart={e=>e.dataTransfer.setData('text/plain',i.id)} className="qc-kanban-card"><div className="qc-card-top"><small>{i.room}</small><button aria-label={`Detalhes de ${i.name}`} onClick={()=>openItem(i.id)}>↗</button></div><button className="qc-card-name" onClick={()=>openItem(i.id)}>{i.name}</button><p>{i.category}</p><button className="qc-kanban-offers" onClick={()=>openItem(i.id,'offers')}>✧ Buscar opções</button><div className="qc-card-bottom"><strong>{money(isBought(i)?i.paidTotal:i.qty*i.unitBudget)}</strong><span>{i.qty} un.</span></div><select aria-label={`Mover ${i.name}`} value={i.status} onChange={e=>move(i,e.target.value)}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></article>)}<button className="qc-kanban-add" onClick={()=>newItem()}>＋ Novo item</button></div>)}</section>}
- {view==='budget'&&<section className="qc-budget-view"><div className="qc-section-title"><div><h2>Um olhar para o seu orçamento</h2><p>Valores consolidados, sem contar subitens duas vezes.</p></div><button className="qc-button" onClick={()=>setModal({type:'budget'})}>Editar limite</button></div><div className="qc-budget-table"><div className="qc-budget-line header"><span>Ambiente</span><span>Previsto</span><span>Pago</span><span>A comprar¹</span></div>{rooms.filter(r=>room==='Todos'||room===r).map(r=>{const t=totals(items.filter(i=>i.room===r));const pending=leafItems(items.filter(i=>i.room===r)).filter(i=>!isBought(i)).reduce((s,i)=>s+i.qty*i.unitBudget,0);return <div className="qc-budget-line" key={r}><strong>{r}</strong><span>{money(t.planned)}</span><span>{money(t.paid)}</span><span>{money(pending)}</span></div>;})}</div><p className="qc-muted">¹ Estimativa dos itens pendentes; compras já registradas usam o valor efetivamente pago.</p><h3>Como você pagou</h3><div className="qc-payment-list">{METHODS.filter(m=>items.some(i=>i.paymentMethod===m&&isBought(i))).map(m=><div key={m}><span>{m}</span><strong>{money(leafItems(items).filter(i=>i.paymentMethod===m).reduce((s,i)=>s+i.paidTotal,0))}</strong></div>)}</div><div className="qc-note">Compras parceladas entram pelo valor total da compra. Esta v1 não calcula vencimentos ou fatura mensal.</div></section>}
- {view==='assistant'&&<section className="qc-assistant"><span className="qc-ai-orb">✧</span><div className="qc-eyebrow">ASSISTENTE DE COMPRAS · DEMONSTRAÇÃO</div><h2>Boas escolhas começam<br/>com as perguntas certas.</h2><p>Descubra o que pode estar faltando e compare suas opções.</p><div className="qc-suggestions">{suggested.map(s=>{const added=items.some(i=>normalize(i.name)===normalize(s[0]));return <article key={s[0]}><span>{s[1]} · sugestão</span><strong>{s[0]}</strong><small>Estimativa demo: {money(s[3])}</small><button className="qc-button" disabled={added} onClick={()=>addSuggestion(s)}>{added?'✓ Adicionado':'＋ Adicionar à lista'}</button></article>;})}</div><div className="qc-chat-log" aria-live="polite">{aiReplies.map((r,i)=><div key={i}><p className="qc-question">{r.question}</p><p className="qc-answer">✧ {r.answer}</p></div>)}</div><form className="qc-chat-form" onSubmit={askAI}><input aria-label="Pergunta para o assistente" placeholder="O que devo priorizar no meu projeto?" value={aiMessage} onChange={e=>setAiMessage(e.target.value)}/><button type="submit" className="qc-button qc-primary" disabled={!aiMessage.trim()}>Perguntar ↗</button></form><small className="qc-muted">Sugestões e respostas locais de exemplo. Nenhuma consulta à internet é realizada.</small></section>}
- {view==='checklist'&&<div className="qc-ai-strip"><span className="qc-ai-icon">✧</span><div><strong>Comprar bem também faz parte do plano.</strong><p>Compare opções e acompanhe preços antes de decidir.</p></div><button onClick={()=>{const i=leafItems(scoped).find(i=>!isBought(i))||leafItems(items)[0];if(i)openItem(i.id,'offers');else setView('assistant');}}>Explorar com IA <span>↗</span></button></div>}<footer className="qc-footer"><span>Feito para os seus próximos começos.</span><span>YOUR CHECKLIST <b>AI</b></span></footer>
- </main></div>
-
- {selected&&<div className="qc-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setSelectedId(null);}}><section className="qc-drawer" role="dialog" aria-modal="true" aria-labelledby="qc-item-title"><div className="qc-drawer-top"><span>{selected.room} <span>/</span> {selected.category}</span><button aria-label="Fechar detalhes" onClick={()=>setSelectedId(null)}>×</button></div><div className="qc-detail-hero"><ProductArt name={selected.name}/><Badge status={selected.status}/><h2 id="qc-item-title">{selected.name}</h2><p>{selected.qty} unidade{selected.qty>1?'s':''} · prioridade {selected.priority.toLowerCase()}</p></div><div className="qc-detail-tabs">{[['details','Detalhes'],['offers','Buscar opções'],['history','Histórico']].map(([key,label])=><button key={key} className={detailTab===key?'active':''} onClick={()=>setDetailTab(key)}>{label}</button>)}</div>
- {detailTab==='details'&&<div className="qc-detail-content"><div className="qc-detail-values"><div><span>Valor previsto total</span><strong>{money(itemCost(selected,items))}</strong></div><div><span>Valor pago total</span><strong>{money(itemCost(selected,items,true))}</strong></div></div><label className="qc-field"><span>Status de compra</span><select value={selected.status} disabled={items.some(i=>i.parentId===selected.id)} onChange={e=>move(selected,e.target.value)}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></label><h3>Especificações e observações</h3><p className="qc-specs">{selected.notes||'Nenhuma observação adicionada. Edite o item para incluir medidas, cores ou marcas preferidas.'}</p>{isBought(selected)&&<div className="qc-purchase-summary"><h3>Compra registrada</h3><p>{selected.paymentMethod}{selected.installments>1?` · ${selected.installments}x de ${money(selected.paidTotal/selected.installments)}`:''}</p><p>{selected.purchaseDate?.split('-').reverse().join('/')} · {selected.store||'Loja não informada'}</p><button className="qc-text-button" onClick={()=>purchase(selected,selected.status)}>Editar registro de compra</button></div>}{selected.url&&<a className="qc-button" target="_blank" rel="noopener noreferrer" href={safeUrl(selected.url)}>Abrir link salvo ↗</a>}<div className="qc-subitems"><h3>Subitens <small>{items.filter(i=>i.parentId===selected.id).length}</small></h3>{items.filter(i=>i.parentId===selected.id).map(i=><div key={i.id}><input type="checkbox" checked={isBought(i)} aria-label={`Comprar ${i.name}`} onChange={()=>toggle(i)}/><button className="qc-plain" onClick={()=>openItem(i.id)}>{i.name}</button><span>{money(i.qty*i.unitBudget)}</span></div>)}{!isBought(selected)&&!selected.parentId&&<button className="qc-button" onClick={()=>{const id=selected.id;setSelectedId(null);newItem(id);}}>＋ Adicionar subitem</button>}<small className="qc-muted">O valor de um item com subitens é a soma deles.</small></div><div className="qc-detail-actions"><button className="qc-button" onClick={()=>{const id=selected.id;setSelectedId(null);setModal({type:'item',editId:id});}}>Editar item</button><button className="qc-button qc-danger" onClick={()=>{setModal({type:'delete',id:selected.id});setSelectedId(null);}}>Excluir</button>{!items.some(i=>i.parentId===selected.id)&&!isBought(selected)&&<button className="qc-button qc-primary" onClick={()=>purchase(selected)}>✓ Registrar compra</button>}</div></div>}
- {detailTab==='offers'&&<OffersPanel key={selected.id} item={selected} importedOffers={data.offers.filter(o=>o.itemId===selected.id)} onImport={()=>openImport({kind:'offers',itemId:selected.id})} onTemplate={format=>offerTemplateDownload(format,selected)} onExport={()=>download('opcoes-pesquisadas.csv',csvString(offersToRows(data.offers.filter(o=>o.itemId===selected.id),items),OFFER_FIELDS))} onChoose={offer=>{setModal({type:'purchase',id:selected.id,after:'Comprado',offer});setSelectedId(null);}}/>}
- {detailTab==='history'&&<OfferHistory records={data.offers.filter(o=>o.itemId===selected.id)} onImport={()=>openImport({kind:'offers',itemId:selected.id})}/>}
- </section></div>}
-
- {modal&&<div className="qc-overlay qc-modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(null);}}><section className={'qc-modal '+(['import','template','gallery'].includes(modal.type)?'large':'')} role="dialog" aria-modal="true" aria-labelledby="qc-modal-title"><div className="qc-modal-header"><div><div className="qc-eyebrow">YOUR CHECKLIST</div><h2 id="qc-modal-title">{{item:modal.editId?'Editar item':modal.parentId?'Novo subitem':'Um novo item no plano',purchase:'Mais uma conquista',import:'Da planilha para o seu plano',template:'Seu template de importação',project:'O que vamos planejar?',budget:'Orçamento do projeto',room:'Um novo ambiente',delete:'Excluir este item?',reopen:'Reabrir este item?',gallery:'Referências por categoria'}[modal.type]}</h2></div><button aria-label="Fechar janela" onClick={modal.type==='import'?closeImport:()=>setModal(null)}>×</button></div>
- {modal.type==='gallery'&&<CategoryGallery key={project.id} category={modal.category} categories={galleryCategories} record={gallery.records.find(entry=>normalize(entry.category)===normalize(modal.category))} ready={gallery.ready} storageError={gallery.error} onRetry={gallery.reload} onChange={gallery.change} onCategoryChange={category=>setModal(current=>({...current,category}))} onAddItem={category=>setModal({type:'item',category})}/>}
- {modal.type==='item'&&(()=>{const i=items.find(x=>x.id===modal.editId)||{};const parent=items.find(x=>x.id===modal.parentId);return <form onSubmit={saveItem}><div className="qc-form-grid"><Field label="Nome do item *" wide><input name="name" required autoComplete="off" defaultValue={i.name||''} placeholder="Ex.: Geladeira frost free" maxLength={160}/></Field><Field label="Ambiente *"><input name="room" list="qc-room-options" required defaultValue={parent?.room||i.room||(room!=='Todos'?room:'')} readOnly={!!parent} placeholder="Ex.: Cozinha" maxLength={80}/><datalist id="qc-room-options">{rooms.map(r=><option key={r}>{r}</option>)}</datalist></Field><Field label="Categoria *"><input name="category" list="qc-cat-options" required defaultValue={parent?.category||i.category||modal.category||''} readOnly={!!parent} placeholder="Ex.: Eletrodomésticos" maxLength={80}/><datalist id="qc-cat-options">{galleryCategories.map(r=><option key={r}>{r}</option>)}</datalist></Field><Field label="Quantidade *"><input name="qty" type="number" min="1" step="1" required defaultValue={i.qty||1}/></Field><Field label="Valor previsto unitário (R$)"><input name="unitBudget" type="number" min="0" step="0.01" required defaultValue={i.unitBudget||0}/></Field><Field label="Prioridade"><select name="priority" defaultValue={i.priority||'Média'}>{['Alta','Média','Baixa'].map(p=><option key={p}>{p}</option>)}</select></Field><Field label="Link de referência"><input name="url" type="url" defaultValue={i.url||''} placeholder="https://..."/></Field><Field label="Especificações e observações" wide><textarea name="notes" rows="3" defaultValue={i.notes||''} placeholder="Medidas, voltagem, cores, marcas..." maxLength={3000}/></Field></div>{parent&&<p className="qc-note">Subitem de {parent.name}. Ambiente e categoria são herdados.</p>}<div className="qc-form-footer"><button type="button" className="qc-button" onClick={()=>setModal(null)}>Cancelar</button><button className="qc-button qc-primary" type="submit">{modal.editId?'Salvar alterações':'＋ Adicionar ao checklist'}</button></div></form>;})()}
- {modal.type==='purchase'&&(()=>{const i=items.find(x=>x.id===modal.id);return <form onSubmit={savePurchase}><div className="qc-purchase-item"><ProductArt name={i.name} small/><div><strong>{i.name}</strong><small>{i.qty} un. · previsto {money(i.qty*i.unitBudget)}</small></div></div><div className="qc-form-grid"><Field label="Valor pago total, com frete (R$) *"><input name="paidTotal" type="number" min="0" step="0.01" required defaultValue={modal.offer?modal.offer.price*i.qty+(modal.offer.shipping??0):i.paidTotal||i.qty*i.unitBudget}/></Field><Field label="Data da compra *"><input name="date" type="date" required max={today()} defaultValue={i.purchaseDate||today()}/></Field><Field label="Forma de pagamento *"><select name="method" defaultValue={i.paymentMethod||'Pix'}>{METHODS.map(m=><option key={m}>{m}</option>)}</select></Field><Field label="Parcelas (cartão de crédito)"><input name="installments" type="number" min="1" max="120" required defaultValue={i.installments||1}/></Field><Field label="Loja"><input name="store" defaultValue={modal.offer?.store||i.store} placeholder="Onde você comprou?"/></Field><Field label="Link do produto"><input type="url" name="url" defaultValue={modal.offer?.url||i.url} placeholder="https://..."/></Field><Field label="Observações" wide><textarea name="notes" rows="2" defaultValue={i.notes} placeholder="Prazo de entrega, número do pedido..."/></Field></div>{modal.offer&&modal.offer.shipping===null&&<p className="qc-demo-note">O frete não foi informado pela fonte. Inclua o valor final no total pago.</p>}{modal.offer?.source==='demo'&&<p className="qc-demo-note">Oferta fictícia selecionada. Confirme o valor antes de salvar.</p>}<div className="qc-form-footer"><button type="button" className="qc-button" onClick={()=>setModal(null)}>Cancelar</button><button className="qc-button qc-primary" type="submit">✓ Confirmar compra</button></div></form>;})()}
- {modal.type==='import'&&<div><p className="qc-modal-description">Importe itens da arquiteta, sua lista de viagem ou registros de preços.</p>{importKind==='offers'&&<div className="qc-offer-import-context"><strong>{importItem?`Opções para: ${importItem.name}`:'Ofertas de todo o projeto'}</strong><p>{importItem?`${importItem.room} · ${importItem.category} · ID: ${importItem.id}`:'Informe item_id ou o nome do item com ambiente/categoria para vincular cada opção.'}</p><small>Campos essenciais: nome, preço, link e data da consulta. Frete vazio = desconhecido; 0 = grátis. Nota, avaliações e imagem_url são opcionais. Use o link HTTPS direto da foto do produto.</small></div>}<div className="qc-import-tabs"><button className={importKind==='items'?'active':''} onClick={()=>changeImportKind('items')}>Itens do checklist</button><button className={importKind==='offers'?'active':''} onClick={()=>changeImportKind('offers')}>Ofertas e histórico</button></div><div className="qc-import-method" aria-label="Origem dos dados"><div><button aria-pressed={importSource==='file'} onClick={()=>switchImportSource('file')}>Enviar arquivo</button><button aria-pressed={importSource==='paste'} onClick={()=>switchImportSource('paste')}>Colar CSV</button></div><button className="qc-text-button" onClick={exampleCSV}>Experimentar com exemplo</button></div>{importSource==='file'?<div className="qc-upload" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();readFile(e.dataTransfer.files[0]);}}><span>↥</span><strong>{reading?'Lendo planilha...':fileRows.length?fileName:'Sua lista ganha vida aqui'}</strong><p>Arraste um arquivo ou selecione no computador</p><button className="qc-button" disabled={reading} onClick={()=>fileRef.current?.click()}>Selecionar arquivo</button><input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" hidden onChange={e=>{readFile(e.target.files[0]);e.target.value='';}}/><small>CSV, XLSX ou XLS · até 5 MB · primeira aba</small></div>:<div className="qc-paste-area"><label className="qc-field"><span>Conteúdo CSV com cabeçalhos</span><textarea aria-label="Conteúdo CSV" rows="5" value={csvDraft} placeholder={importKind==='items'?'ambiente;categoria;item;quantidade;valor_previsto_unitario':'nome;preco;link;data_consulta;loja;frete;nota;avaliacoes'} onChange={e=>{setCsvDraft(e.target.value);setFileRows([]);setImportError('');}}/></label><div><small>Separador: vírgula ou ponto e vírgula.</small><button className="qc-button" disabled={!csvDraft.trim()} onClick={()=>reviewCSV()}>Revisar CSV →</button></div></div>}<div className="qc-template-actions"><button className="qc-text-button" onClick={()=>importKind==='items'?templateDownload():offerTemplateDownload()}>↧ Baixar template CSV</button><button className="qc-text-button" onClick={()=>importKind==='items'?templateDownload('xlsx'):offerTemplateDownload('xlsx')}>↧ Template Excel</button>{importKind==='items'&&<><button className="qc-text-button" onClick={()=>setModal({type:'template'})}>Personalizar colunas</button></>}</div>{importError&&<p className="qc-error" role="alert">{importError}</p>}{fileRows.length>0&&<div className="qc-import-review"><h3>Revise antes de importar <small>{fileRows.length} linhas</small></h3>{importKind==='items'&&<div className="qc-mapping">{FIELDS.filter(([key,,required])=>required||['quantidade','valor_previsto_unitario','item_pai','status'].includes(key)).map(([key,label,required])=><Field key={key} label={label+(required?' *':'')}><select aria-label={`Coluna ${label}`} value={mapping[key]||''} onChange={e=>setMapping({...mapping,[key]:e.target.value})}><option value="">{required?'Selecionar coluna':'Usar padrão / vazio'}</option>{Object.keys(fileRows[0]).map(c=><option key={c}>{c}</option>)}</select></Field>)}</div>}{importKind==='offers'&&<div className="qc-mapping">{OFFER_COLUMNS.map(([key,label,required])=><Field key={key} label={label+(required?' *':'')}><select aria-label={`Coluna de oferta ${label}`} value={mapping[key]||''} onChange={e=>setMapping({...mapping,[key]:e.target.value})}><option value="">{required?'Selecionar coluna':'Vazio / padrão do item'}</option>{Object.keys(fileRows[0]).map(c=><option key={c}>{c}</option>)}</select></Field>)}</div>}{importKind==='items'?<div className="qc-import-preview">{fileRows.slice(0,3).map((r,index)=><div key={index}><strong>{r[mapping.item]||'Sem item'}</strong><span>{r[mapping.ambiente]||'Sem ambiente'}</span><span>{r[mapping.categoria]||'Sem categoria'}</span></div>)}</div>:<div className="qc-offer-import-preview">{importResult?.offers.slice(0,5).map(o=><article key={o.id}><OfferImage src={o.imageUrl} name={o.model} compact/><div><strong>{o.model}</strong><span>{o.store} · {money(o.price)} · {o.date?.split('-').reverse().join('/')}</span>{o.url&&<a href={o.url} target="_blank" rel="noopener noreferrer">{o.url}</a>}</div></article>)}</div>}{offerImportSummary&&<div className="qc-demo-note" aria-live="polite"><strong>{offerImportSummary.newOptions} {offerImportSummary.newOptions===1?'nova opção':'novas opções'} · {offerImportSummary.updatedOptions} {offerImportSummary.updatedOptions===1?'opção atualizada':'opções atualizadas'}</strong><p>{offerImportSummary.archivedCount===1?'1 opção atual irá':`${offerImportSummary.archivedCount} opções atuais irão`} para o histórico. {offerImportSummary.historicalImports===1?'1 consulta do arquivo ficará':`${offerImportSummary.historicalImports} consultas do arquivo ficarão`} somente no histórico.</p><small>Uma opção por produto: mesmo link ou mesmo nome + loja. Vale a data mais recente; em empate, a última linha importada. Cópias idênticas são ignoradas.</small></div>}{importResult?.errors.length>0?<div className="qc-error" role="alert">{importResult.errors.slice(0,6).map((err,index)=><p key={index}>{err}</p>)}{importResult.errors.length>6&&<p>+ {importResult.errors.length-6} erros. Corrija a planilha antes de continuar.</p>}</div>:<p className="qc-success">✓ {importKind==='items'?importResult?.items.length:importResult?.offers.length} registros prontos{importResult?.duplicates?` · ${importResult.duplicates} duplicados ignorados`:''}</p>}</div>}<div className="qc-form-footer"><button className="qc-button" onClick={closeImport}>Cancelar</button><button className="qc-button qc-primary" disabled={!importResult||importResult.errors.length>0||reading||(importKind==='items'?!importResult.items.length:!importResult.offers.length)} onClick={confirmImport}>Importar {importKind==='items'?'itens':'registros'} →</button></div></div>}
- {modal.type==='template'&&<div><p className="qc-modal-description">Defina as colunas do template que você vai compartilhar. Ambiente, categoria e item são obrigatórios.</p><div className="qc-template-grid">{FIELDS.map(([key,label,required])=><label key={key}><input type="checkbox" checked={required||(data.templateFields||FIELDS.map(f=>f[0])).includes(key)} disabled={required} onChange={e=>setData(d=>({...d,templateFields:e.target.checked?[...(d.templateFields||FIELDS.map(f=>f[0])),key]:(d.templateFields||FIELDS.map(f=>f[0])).filter(x=>x!==key)}))}/><span>{label}<small>{key}{required?' · obrigatório':''}</small></span></label>)}</div><div className="qc-note">Subitens: preencha <b>id</b> para o pai e <b>item_pai</b> com esse ID nos filhos. Valor previsto é unitário; valor pago é o total com frete. Datas: AAAA-MM-DD.</div><div className="qc-form-footer"><button className="qc-button" onClick={()=>templateDownload()}>↧ Baixar CSV</button><button className="qc-button qc-primary" onClick={()=>templateDownload('xlsx')}>↧ Baixar Excel</button></div></div>}
- {modal.type==='project'&&<form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget),id=uid();setData(d=>({...d,projects:[...d.projects,{id,name:String(f.get('name')).trim(),description:String(f.get('description')||'Seu próximo começo, um item de cada vez.'),budget:Number(f.get('budget')),icon:'◇',color:'sage',rooms:[]}],items:{...d.items,[id]:[]}}));setProjectId(id);setRoom('Todos');setView('checklist');setSearch('');setStatusFilter('Todos');setModal(null);notify('Seu novo checklist está pronto.');}}><div className="qc-form-grid"><Field label="Nome do checklist *" wide><input name="name" required maxLength={80} placeholder="Ex.: Minha casa nova, festa, viagem..."/></Field><Field label="Descrição" wide><input name="description" maxLength={160} placeholder="Um novo espaço. Mil possibilidades."/></Field><Field label="Orçamento total (R$) *" wide><input name="budget" type="number" required min="0" step="0.01" defaultValue="5000"/></Field></div><div className="qc-form-footer"><button className="qc-button qc-primary" type="submit">Criar checklist →</button></div></form>}
- {modal.type==='budget'&&<form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);setData(d=>({...d,projects:d.projects.map(p=>p.id===project.id?{...p,budget:Number(f.get('budget'))}:p)}));setModal(null);notify('Orçamento atualizado.');}}><Field label="Quanto você pretende investir? (R$)"><input type="number" name="budget" min="0" required step="0.01" defaultValue={project.budget}/></Field><p className="qc-note">O limite do projeto é independente da soma dos valores previstos dos itens.</p><div className="qc-form-footer"><button className="qc-button qc-primary" type="submit">Salvar orçamento</button></div></form>}
- {modal.type==='room'&&<form onSubmit={e=>{e.preventDefault();const name=String(new FormData(e.currentTarget).get('room')).trim();if(!name)return;setData(d=>({...d,projects:d.projects.map(p=>p.id===project.id?{...p,rooms:[...new Set([...(p.rooms||[]),name])]}:p)}));setRoom(name);setModal(null);}}><Field label="Nome do ambiente ou grupo *"><input name="room" required maxLength={80} placeholder="Ex.: Lavanderia, área externa, mala..."/></Field><div className="qc-form-footer"><button className="qc-button qc-primary" type="submit">Adicionar ambiente</button></div></form>}
- {modal.type==='delete'&&<div><p>O item e seus subitens serão removidos, incluindo os registros de compra e preços.</p><div className="qc-form-footer"><button className="qc-button" onClick={()=>setModal(null)}>Cancelar</button><button className="qc-button qc-danger" onClick={()=>deleteItem(modal.id)}>Excluir item</button></div></div>}
- {modal.type==='reopen'&&<div><p>O registro de compra deste item será limpo. Ele voltará para <b>{modal.status}</b>.</p><div className="qc-form-footer"><button className="qc-button" onClick={()=>setModal(null)}>Cancelar</button><button className="qc-button qc-primary" onClick={()=>{patch(modal.id,{status:modal.status,paidTotal:0,paymentMethod:'',installments:1,purchaseDate:'',store:''});setModal(null);notify('Item reaberto.');}}>Reabrir item</button></div></div>}
- </section></div>}
- <div className={'qc-toast '+(toast?'visible':'')} role="status" aria-live="polite">✓ {toast}</div>
- </div>;
+const STORAGE = "your-check-list-ai-v1";
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const roomSymbols = {
+  Cozinha: "♧",
+  "Sala de estar": "▱",
+  Quarto: "☾",
+  Banheiro: "◒",
+  Escritório: "▤",
+  Mala: "▣",
+  Praia: "☀",
+  Mercado: "▧",
+};
+const statusClass = (status) =>
+  ({
+    Planejado: "planned",
+    Pesquisando: "research",
+    Comprado: "bought",
+    Recebido: "delivered",
+  })[status];
+const isBought = (item) => ["Comprado", "Recebido"].includes(item.status);
+const download = (name, content, type = "text/csv;charset=utf-8") => {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+};
+const toRows = (items) =>
+  items.map((i) => ({
+    id: i.id,
+    ambiente: i.room,
+    categoria: i.category,
+    item: i.name,
+    item_pai: i.parentId || "",
+    quantidade: i.qty,
+    valor_previsto_unitario: i.unitBudget,
+    status: i.status,
+    prioridade: i.priority,
+    valor_pago_total: i.paidTotal || "",
+    forma_pagamento: i.paymentMethod,
+    parcelas: i.installments,
+    data_compra: i.purchaseDate,
+    loja: i.store,
+    link: i.url,
+    observacoes: i.notes,
+  }));
+function Field({ label, children, wide = false }) {
+  return (
+    <label className={"qc-field " + (wide ? "qc-wide" : "")}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+function Badge({ status }) {
+  return (
+    <span className={"qc-badge " + statusClass(status)}>
+      <span aria-hidden="true">●</span>
+      {status}
+    </span>
+  );
+}
+function ProductArt({ name, small = false }) {
+  const lower = normalize(name);
+  const kind = /geladeira/.test(lower)
+    ? "fridge"
+    : /forno|cooktop/.test(lower)
+      ? "oven"
+      : /sofa|cadeira/.test(lower)
+        ? "chair"
+        : /prato|copo/.test(lower)
+          ? "plate"
+          : "box";
+  return (
+    <span
+      className={`qc-art ${kind} ${small ? "small" : ""}`}
+      aria-hidden="true"
+    >
+      <span />
+      <i />
+    </span>
+  );
 }
 
+export default function ChecklistApp({
+  initialData = null,
+  onDataChange = null,
+  cloud = null,
+  initialItemId = null,
+  initialDetailTab = "details",
+} = {}) {
+  const [data, setData] = useState(() =>
+      clone(initialData || emptyWorkspace()),
+    ),
+    [ready, setReady] = useState(false),
+    [projectId, setProjectId] = useState(
+      initialData?.projects[0]?.id || "__empty",
+    ),
+    [room, setRoom] = useState("Todos"),
+    [view, setView] = useState("checklist"),
+    [search, setSearch] = useState(""),
+    [statusFilter, setStatusFilter] = useState("Todos"),
+    [sort, setSort] = useState("category"),
+    [modal, setModal] = useState(null),
+    [selectedId, setSelectedId] = useState(initialItemId),
+    [detailTab, setDetailTab] = useState(initialDetailTab),
+    [expanded, setExpanded] = useState(new Set(["cabinet"])),
+    [toast, setToast] = useState(""),
+    [fileRows, setFileRows] = useState([]),
+    [fileName, setFileName] = useState(""),
+    [mapping, setMapping] = useState({}),
+    [importKind, setImportKind] = useState("items"),
+    [importError, setImportError] = useState(""),
+    [dropId, setDropId] = useState(null),
+    [reading, setReading] = useState(false);
+  const rootRef = useRef(null),
+    fileRef = useRef(null),
+    lastFocus = useRef(null),
+    toastTimer = useRef(null);
+  const [importSource, setImportSource] = useState("file"),
+    [csvDraft, setCsvDraft] = useState(""),
+    [importItemId, setImportItemId] = useState(null);
+  const [overlayHeight, setOverlayHeight] = useState(0);
+  useEffect(() => {
+    if (!modal && !selectedId) {
+      setOverlayHeight(0);
+      return;
+    }
+    const target = rootRef.current?.querySelector(
+      modal ? ".qc-modal" : ".qc-detail-content",
+    );
+    if (!target) return;
+    const measure = () =>
+      setOverlayHeight(
+        Math.ceil(target.getBoundingClientRect().height) + (modal ? 150 : 400),
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [modal, selectedId, detailTab]);
+  const notify = (message) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 3800);
+  };
+  useEffect(() => {
+    if (onDataChange) {
+      setReady(true);
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (
+          parsed.version === 1 &&
+          Array.isArray(parsed.projects) &&
+          parsed.items
+        )
+          setData(parsed);
+      }
+    } catch {}
+    setReady(true);
+  }, [onDataChange]);
+  useEffect(() => {
+    if (onDataChange) {
+      if (ready) onDataChange(data);
+      return;
+    }
+    if (ready)
+      try {
+        localStorage.setItem(STORAGE, JSON.stringify(data));
+      } catch {
+        notify(
+          "O navegador bloqueou o salvamento local. As alterações duram nesta sessão.",
+        );
+      }
+  }, [data, ready, onDataChange]);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  useEffect(() => {
+    if (!modal && !selectedId) return;
+    lastFocus.current = document.activeElement;
+    const panel = rootRef.current?.querySelector('[role="dialog"]');
+    const first = panel?.querySelector("button,input,select,textarea,a[href]");
+    first?.focus();
+    const key = (e) => {
+      if (e.key === "Escape") {
+        setModal(null);
+        setSelectedId(null);
+      }
+      if (e.key === "Tab" && panel) {
+        const all = [
+          ...panel.querySelectorAll(
+            "button:not(:disabled),input:not(:disabled),select,textarea,a[href]",
+          ),
+        ].filter((x) => x.offsetParent !== null);
+        const first = all[0],
+          last = all.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("keydown", key);
+      lastFocus.current?.focus?.();
+    };
+  }, [modal, selectedId]);
+  const project = data.projects.find((p) => p.id === projectId) ||
+      data.projects[0] || { id: "__empty", name: "", budget: 0, rooms: [] },
+    items = data.items[project.id] || [],
+    selected = items.find((i) => i.id === selectedId),
+    stats = totals(items),
+    rooms = [
+      ...new Set([...items.map((i) => i.room), ...(project.rooms || [])]),
+    ],
+    progress = stats.count ? Math.round((stats.bought / stats.count) * 100) : 0;
+  const gallery = useCategoryGalleries(project.id, cloud);
+  const galleryCategories = categoryNames(items, [
+    ...gallery.records,
+    ...(project.categories || []).map((category) => ({ category })),
+  ]);
+  const galleryPhotos = (category) =>
+    gallery.records.find(
+      (entry) => normalize(entry.category) === normalize(category),
+    )?.photos || [];
+  const importItem = items.find((i) => i.id === importItemId);
+  const scoped = items.filter(
+    (i) =>
+      (room === "Todos" || i.room === room) &&
+      (!search ||
+        normalize(i.name + " " + i.category + " " + i.notes).includes(
+          normalize(search),
+        )) &&
+      (statusFilter === "Todos" || i.status === statusFilter),
+  );
+  const visible = scoped.filter(
+    (i) => !i.parentId || !scoped.some((p) => p.id === i.parentId),
+  );
+  const sorted = [...visible].sort((a, b) =>
+    sort === "price"
+      ? itemCost(a, items) - itemCost(b, items)
+      : sort === "priority"
+        ? ["Alta", "Média", "Baixa"].indexOf(a.priority) -
+          ["Alta", "Média", "Baixa"].indexOf(b.priority)
+        : a.category.localeCompare(b.category, "pt-BR"),
+  );
+  const groups = [...new Set(sorted.map((i) => i.category))];
+  const openGallery = (category = groups[0] || galleryCategories[0] || "") => {
+    setSelectedId(null);
+    setModal({ type: "gallery", category });
+  };
+  const changeItems = (fn) =>
+    setData((d) => ({
+      ...d,
+      items: { ...d.items, [project.id]: fn(d.items[project.id] || []) },
+    }));
+  const patch = (id, values) =>
+    changeItems((all) =>
+      all.map((i) => (i.id === id ? { ...i, ...values } : i)),
+    );
+  const setProject = (id) => {
+    setProjectId(id);
+    setRoom("Todos");
+    setSearch("");
+    setStatusFilter("Todos");
+    setSelectedId(null);
+    setView("checklist");
+  };
+  const openItem = (id, tab = "details") => {
+    setSelectedId(id);
+    setDetailTab(tab);
+    setModal(null);
+  };
+  const newItem = (parentId = null) => setModal({ type: "item", parentId });
+  const purchase = (item, after = "Comprado") => {
+    setSelectedId(null);
+    setModal({ type: "purchase", id: item.id, after });
+  };
+  const move = (item, status) => {
+    if (items.some((c) => c.parentId === item.id)) return;
+    if (["Comprado", "Recebido"].includes(status) && !item.purchaseDate)
+      purchase(item, status);
+    else if (!["Comprado", "Recebido"].includes(status) && isBought(item)) {
+      setSelectedId(null);
+      setModal({ type: "reopen", id: item.id, status });
+    } else patch(item.id, { status });
+  };
+  const toggle = (item) =>
+    isBought(item) ? move(item, "Planejado") : purchase(item);
+  const openImport = (options = {}) => {
+    const { kind = "items", itemId = null } = options;
+    setSelectedId(null);
+    setFileRows([]);
+    setFileName("");
+    setMapping({});
+    setImportError("");
+    setImportKind(kind);
+    setImportItemId(itemId);
+    setImportSource("file");
+    setCsvDraft("");
+    setModal({ type: "import" });
+  };
+  function closeImport() {
+    setModal(null);
+    if (importItemId) {
+      setSelectedId(importItemId);
+      setDetailTab("offers");
+    }
+  }
+  function reviewImport(rows, name) {
+    if (!rows.length)
+      throw new Error("A planilha está vazia ou sem cabeçalhos.");
+    if (rows.length > 2000)
+      throw new Error("A prévia aceita até 2.000 linhas por importação.");
+    const cols = Object.keys(rows[0]);
+    const map = importKind === "offers" ? mapOfferColumns(cols) : {};
+    if (importKind === "items")
+      FIELDS.forEach(([key, label]) => {
+        map[key] =
+          cols.find(
+            (c) =>
+              normalize(c) === normalize(key) ||
+              normalize(c) === normalize(label),
+          ) || "";
+      });
+    setFileName(name);
+    setMapping(map);
+    setFileRows(rows);
+  }
+  function switchImportSource(source) {
+    setImportSource(source);
+    setFileRows([]);
+    setImportError("");
+    setFileName("");
+  }
+  function changeImportKind(kind) {
+    if (kind !== "offers") setImportItemId(null);
+    setImportKind(kind);
+    setFileRows([]);
+    setImportError("");
+    setCsvDraft("");
+    setFileName("");
+  }
+  function reviewCSV(text = csvDraft) {
+    setImportError("");
+    setFileRows([]);
+    try {
+      if (new TextEncoder().encode(text).length > 5 * 1024 * 1024)
+        throw new Error("Cole um CSV de até 5 MB.");
+      reviewImport(parseCSV(text), "CSV colado");
+    } catch (error) {
+      setImportError(error.message || "Não foi possível ler o CSV.");
+    }
+  }
+  function exampleCSV() {
+    const sample =
+      importKind === "items"
+        ? csvString(
+            [
+              {
+                id: "cafe-grupo",
+                ambiente: "Cozinha",
+                categoria: "Cantinho do café",
+                item: "Kit café da manhã",
+                quantidade: 1,
+                valor_previsto_unitario: 0,
+                status: "Planejado",
+              },
+              {
+                id: "cafe-maquina",
+                item_pai: "cafe-grupo",
+                ambiente: "Cozinha",
+                categoria: "Cantinho do café",
+                item: "Cafeteira elétrica",
+                quantidade: 1,
+                valor_previsto_unitario: 279.9,
+                status: "Planejado",
+              },
+              {
+                id: "cafe-xicaras",
+                item_pai: "cafe-grupo",
+                ambiente: "Cozinha",
+                categoria: "Cantinho do café",
+                item: "Xícaras de cerâmica",
+                quantidade: 4,
+                valor_previsto_unitario: 24.9,
+                status: "Planejado",
+              },
+            ],
+            [
+              "id",
+              "item_pai",
+              "ambiente",
+              "categoria",
+              "item",
+              "quantidade",
+              "valor_previsto_unitario",
+              "status",
+            ],
+          )
+        : offerExampleCSV();
+    setImportSource("paste");
+    setCsvDraft(sample);
+    reviewCSV(sample);
+  }
+  async function readFile(file) {
+    if (!file) return;
+    setImportError("");
+    setFileRows([]);
+    setFileName(file.name);
+    if (file.size > 5 * 1024 * 1024) {
+      setImportError("Envie um arquivo de até 5 MB.");
+      return;
+    }
+    setReading(true);
+    try {
+      let rows;
+      if (/\.csv$/i.test(file.name)) rows = parseCSV(await file.text());
+      else if (/\.(xlsx|xls)$/i.test(file.name)) {
+        const book = XLSX.read(await file.arrayBuffer(), {
+          type: "array",
+          cellDates: true,
+        });
+        rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], {
+          defval: "",
+          raw: false,
+          dateNF: "yyyy-mm-dd",
+        });
+      } else throw new Error("Formato não suportado. Use CSV, XLSX ou XLS.");
+      reviewImport(rows, file.name);
+    } catch (error) {
+      setImportError(error.message || "Não foi possível ler o arquivo.");
+    } finally {
+      setReading(false);
+    }
+  }
+  const importResult = fileRows.length
+    ? importKind === "items"
+      ? prepareImport(fileRows, mapping, items)
+      : prepareOffers(fileRows, items, {
+          mapping,
+          itemId: importItemId,
+          existing: data.offers,
+        })
+    : null;
+  const offerImportSummary =
+    importKind === "offers" && importResult
+      ? summarizeOfferImport(data.offers, importResult.offers)
+      : null;
+  function confirmImport() {
+    if (!importResult || importResult.errors.length) return;
+    if (importKind === "items") {
+      changeItems((all) => [...all, ...importResult.items]);
+      notify(`${importResult.items.length} itens importados.`);
+    } else {
+      setData((d) => ({ ...d, offers: [...d.offers, ...importResult.offers] }));
+      notify(
+        `${importResult.offers.length} consultas importadas. ${offerImportSummary.newOptions} ${offerImportSummary.newOptions === 1 ? "nova opção" : "novas opções"} · ${offerImportSummary.updatedOptions} ${offerImportSummary.updatedOptions === 1 ? "opção atualizada" : "opções atualizadas"}. Anteriores preservadas no histórico.`,
+      );
+      const target =
+        importItemId ||
+        ([...new Set(importResult.offers.map((o) => o.itemId))].length === 1
+          ? importResult.offers[0]?.itemId
+          : null);
+      if (target) {
+        setSelectedId(target);
+        setDetailTab("offers");
+      }
+    }
+    setModal(null);
+  }
+  function exportItems() {
+    download(
+      `${project.name.toLowerCase().replaceAll(" ", "-")}.csv`,
+      csvString(
+        toRows(items),
+        FIELDS.map((f) => f[0]),
+      ),
+    );
+    notify("Checklist exportado.");
+  }
+  function offerTemplateDownload(format = "csv", target = importItem) {
+    const rows = (target ? [target] : leafItems(items)).map((i) =>
+      Object.fromEntries(
+        OFFER_FIELDS.map((key) => [
+          key,
+          {
+            item_id: i.id,
+            item: i.name,
+            ambiente: i.room,
+            categoria: i.category,
+            moeda: "BRL",
+          }[key] || "",
+        ]),
+      ),
+    );
+    if (format === "xlsx") {
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        book,
+        XLSX.utils.json_to_sheet(rows, { header: OFFER_FIELDS }),
+        "Opções",
+      );
+      XLSX.writeFile(book, "template-opcoes.xlsx");
+    } else download("template-opcoes.csv", csvString(rows, OFFER_FIELDS));
+  }
+  function offerExampleCSV() {
+    const i = importItem || leafItems(items)[0];
+    if (!i) return csvString([], OFFER_FIELDS);
+    const day = today();
+    const yesterday = new Date(
+      new Date(day + "T12:00:00Z").getTime() - 86400000,
+    )
+      .toISOString()
+      .slice(0, 10);
+    const common = {
+      item_id: i.id,
+      item: i.name,
+      ambiente: i.room,
+      categoria: i.category,
+      moeda: "BRL",
+      fonte: "Exemplo fictício",
+      observacoes: "Dados inventados somente para testar a importação.",
+    };
+    const rows = [
+      {
+        ...common,
+        nome: "Modelo A (EXEMPLO)",
+        loja: "Loja fictícia A",
+        preco: 3890,
+        frete: 99.9,
+        data_consulta: yesterday,
+        link: "https://example.com/produto-a",
+        nota: 4.6,
+        avaliacoes: 200,
+      },
+      {
+        ...common,
+        nome: "Modelo A (EXEMPLO)",
+        loja: "Loja fictícia A",
+        preco: 3590,
+        frete: 99.9,
+        data_consulta: day,
+        link: "https://example.com/produto-a",
+        nota: 4.6,
+        avaliacoes: 210,
+      },
+      {
+        ...common,
+        nome: "Modelo B (EXEMPLO)",
+        loja: "Loja fictícia B",
+        preco: 3780,
+        frete: 0,
+        data_consulta: day,
+        link: "https://example.com/produto-b",
+        nota: 4.8,
+        avaliacoes: 420,
+      },
+    ];
+    return csvString(rows, OFFER_FIELDS);
+  }
+  function templateDownload(format = "csv") {
+    const cols = data.templateFields || FIELDS.map((f) => f[0]);
+    const rows = [
+      {
+        id: "cozinha-001",
+        ambiente: "Cozinha",
+        categoria: "Eletrodomésticos",
+        item: "Geladeira",
+        quantidade: 1,
+        valor_previsto_unitario: 4200,
+        status: "Planejado",
+        prioridade: "Alta",
+        parcelas: 1,
+        observacoes: "220 V; conferir medidas",
+      },
+    ];
+    if (format === "xlsx") {
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        book,
+        XLSX.utils.json_to_sheet(
+          rows.map((row) =>
+            Object.fromEntries(cols.map((key) => [key, row[key] ?? ""])),
+          ),
+          { header: cols },
+        ),
+        "Itens",
+      );
+      XLSX.writeFile(book, "template-your-checklist.xlsx");
+    } else download("template-your-checklist.csv", csvString(rows, cols));
+  }
+  function saveItem(e) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const parent = items.find((i) => i.id === modal.parentId);
+    const values = {
+      name: String(f.get("name")).trim(),
+      room: parent?.room || String(f.get("room")).trim(),
+      category: parent?.category || String(f.get("category")).trim(),
+      qty: Number(f.get("qty")),
+      unitBudget: Number(f.get("unitBudget")),
+      priority: f.get("priority"),
+      notes: f.get("notes") || "",
+      url: safeUrl(f.get("url")),
+    };
+    if (
+      !values.name ||
+      !values.room ||
+      !values.category ||
+      !Number.isInteger(values.qty) ||
+      values.qty < 1 ||
+      !Number.isFinite(values.unitBudget) ||
+      values.unitBudget < 0
+    )
+      return;
+    if (f.get("url") && !values.url) {
+      notify("Informe um link http:// ou https:// válido.");
+      return;
+    }
+    const editing = modal.editId;
+    if (editing) {
+      const descendants = new Set([editing]);
+      let count = 0;
+      while (count !== descendants.size) {
+        count = descendants.size;
+        items.forEach((i) => {
+          if (descendants.has(i.parentId)) descendants.add(i.id);
+        });
+      }
+      changeItems((all) =>
+        all.map((i) =>
+          i.id === editing
+            ? { ...i, ...values }
+            : descendants.has(i.id)
+              ? { ...i, room: values.room, category: values.category }
+              : i,
+        ),
+      );
+      notify("Item atualizado.");
+    } else {
+      changeItems((all) => [
+        ...all,
+        {
+          id: uid(),
+          ...values,
+          status: "Planejado",
+          parentId: parent?.id || null,
+          paidTotal: 0,
+          paymentMethod: "",
+          installments: 1,
+          purchaseDate: "",
+          store: "",
+        },
+      ]);
+      if (parent) setExpanded(new Set([...expanded, parent.id]));
+      notify(parent ? "Subitem adicionado." : "Item adicionado.");
+    }
+    setModal(null);
+  }
+  function savePurchase(e) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    patch(modal.id, {
+      status: modal.after,
+      paidTotal: Number(f.get("paidTotal")),
+      paymentMethod: f.get("method"),
+      installments:
+        f.get("method") === "Cartão de crédito"
+          ? Number(f.get("installments"))
+          : 1,
+      purchaseDate: f.get("date"),
+      store: String(f.get("store") || ""),
+      url: safeUrl(f.get("url")),
+      notes: String(f.get("notes") || ""),
+    });
+    setModal(null);
+    notify("Compra registrada. Mais um passo para o seu projeto!");
+  }
+  function deleteItem(id) {
+    const ids = new Set([id]);
+    let count = 0;
+    do {
+      count = ids.size;
+      items.forEach((i) => {
+        if (ids.has(i.parentId)) ids.add(i.id);
+      });
+    } while (ids.size > count);
+    changeItems((all) => all.filter((i) => !ids.has(i.id)));
+    setData((d) => ({
+      ...d,
+      offers: d.offers.filter((o) => !ids.has(o.itemId)),
+    }));
+    setModal(null);
+    setSelectedId(null);
+    notify("Item removido.");
+  }
+  const Row = ({ item, depth = 0 }) => {
+    const children = scoped.filter((c) => c.parentId === item.id);
+    const allChildren = items.filter((c) => c.parentId === item.id);
+    const isParent = allChildren.length > 0;
+    return (
+      <React.Fragment key={item.id}>
+        <div
+          className={"qc-item-row " + (depth ? "qc-child" : "")}
+          style={{ "--depth": depth }}
+        >
+          <div className="qc-item-main">
+            {isParent ? (
+              <button
+                className="qc-expand"
+                aria-label={
+                  expanded.has(item.id)
+                    ? "Recolher subitens"
+                    : "Expandir subitens"
+                }
+                onClick={() => {
+                  const next = new Set(expanded);
+                  next.has(item.id) ? next.delete(item.id) : next.add(item.id);
+                  setExpanded(next);
+                }}
+              >
+                {expanded.has(item.id) ? "⌄" : "›"}
+              </button>
+            ) : (
+              <input
+                className="qc-check"
+                type="checkbox"
+                aria-label={`Registrar compra de ${item.name}`}
+                checked={isBought(item)}
+                onChange={() => toggle(item)}
+              />
+            )}
+            {!depth && <ProductArt name={item.name} small />}
+            <button className="qc-item-name" onClick={() => openItem(item.id)}>
+              <strong className={isBought(item) ? "qc-done" : ""}>
+                {item.name}
+              </strong>
+              <span>
+                {isParent
+                  ? `${allChildren.length} subitens · total consolidado`
+                  : item.priority === "Alta"
+                    ? "Prioridade alta"
+                    : isBought(item)
+                      ? `${item.paymentMethod}${item.installments > 1 ? " · " + item.installments + "x" : ""}`
+                      : item.notes
+                        ? "Ver especificações"
+                        : item.room}
+              </span>
+            </button>
+          </div>
+          <span className="qc-qty">{isParent ? "—" : `${item.qty} un.`}</span>
+          <span className="qc-price">
+            {money(itemCost(item, items))}
+            {isBought(item) && !isParent && (
+              <small>pago {money(item.paidTotal)}</small>
+            )}
+          </span>
+          <div className="qc-row-status">
+            {isParent ? (
+              <span className="qc-muted">
+                {leafItems(allChildren).filter(isBought).length}/
+                {leafItems(allChildren).length} concluídos
+              </span>
+            ) : (
+              <button
+                className="qc-plain"
+                aria-label={`Alterar status de ${item.name}`}
+                onClick={() => openItem(item.id)}
+              >
+                <Badge status={item.status} />
+              </button>
+            )}
+          </div>
+          <button
+            className="qc-more"
+            aria-label={`Abrir ${item.name}`}
+            onClick={() => openItem(item.id)}
+          >
+            ↗
+          </button>
+          {!isParent && (
+            <button
+              className="qc-find-options"
+              aria-label={`Buscar opções para ${item.name}`}
+              onClick={() => openItem(item.id, "offers")}
+            >
+              ✧ Buscar opções <span>Preço · avaliações · frete ↗</span>
+            </button>
+          )}
+        </div>
+        {expanded.has(item.id) &&
+          children.map((c) => <Row key={c.id} item={c} depth={depth + 1} />)}
+      </React.Fragment>
+    );
+  };
+
+  async function applyStructure(operation) {
+    if (
+      !operation.remove &&
+      operation.kind === "category" &&
+      galleryCategories.some(
+        (name) =>
+          normalize(name) !== normalize(operation.oldName) &&
+          normalize(name) === normalize(operation.name),
+      )
+    )
+      throw new Error("Já existe uma categoria com esse nome.");
+    let next;
+    if (cloud) next = await cloud.manage(project.id, operation);
+    else {
+      next = manageStructure(data, project.id, operation);
+      await manageLocalGallery(project.id, operation);
+    }
+    setData(next);
+    gallery.reload();
+    setRoom("Todos");
+    if (operation.kind === "project" && operation.remove) {
+      setModal(null);
+      setProjectId(next.projects[0]?.id || "__empty");
+    }
+    notify(operation.remove ? "Removido." : "Nome atualizado.");
+  }
+  if (!data.projects.length)
+    return (
+      <main className="qc-account-page">
+        <section className="qc-account-card">
+          <span className="qc-logo">✓</span>
+          <div className="qc-eyebrow">YOUR CHECKLIST</div>
+          <h1>Qual é o seu próximo plano?</h1>
+          <p>
+            Comece com um checklist vazio. Depois, adicione itens ou importe sua
+            planilha.
+          </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const fields = new FormData(event.currentTarget),
+                id = uid();
+              setData((d) => ({
+                ...d,
+                projects: [
+                  ...d.projects,
+                  {
+                    id,
+                    name: String(fields.get("name")).trim(),
+                    description: "Um item de cada vez.",
+                    budget: Number(fields.get("budget")),
+                    icon: "◇",
+                    color: "sage",
+                    rooms: [],
+                    categories: [],
+                  },
+                ],
+                items: { ...d.items, [id]: [] },
+              }));
+              setProjectId(id);
+            }}
+          >
+            <label className="qc-field">
+              <span>Nome do checklist</span>
+              <input
+                name="name"
+                required
+                maxLength={80}
+                placeholder="Ex.: Meu apartamento"
+              />
+            </label>
+            <label className="qc-field">
+              <span>Orçamento (R$)</span>
+              <input
+                name="budget"
+                type="number"
+                min="0"
+                max="10000000000"
+                step="0.01"
+                defaultValue="5000"
+                required
+              />
+            </label>
+            <button className="qc-button qc-primary">Criar checklist</button>
+          </form>
+        </section>
+      </main>
+    );
+  return (
+    <div
+      className={"qc-app " + (selected ? "qc-detail-open" : "")}
+      id="qc-product"
+      ref={rootRef}
+      style={
+        overlayHeight ? { minHeight: Math.max(960, overlayHeight) } : undefined
+      }
+    >
+      <aside className="qc-sidebar">
+        <a
+          className="qc-brand"
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            setView("checklist");
+          }}
+        >
+          <span className="qc-logo">✓</span>
+          <span>
+            your checklist<span className="qc-brand-ai">AI</span>
+          </span>
+        </a>
+        <div className="qc-workspace">
+          <span className="qc-avatar">P</span>
+          <span>
+            Meu espaço pessoal<small>Organize o que vem a seguir</small>
+          </span>
+        </div>
+        <div className="qc-side-label">PLANEJAR, COMPRAR, CONQUISTAR</div>
+        <button
+          className={"qc-nav " + (view !== "assistant" ? "active" : "")}
+          onClick={() => setView("checklist")}
+        >
+          <span>▤</span>Meus checklists
+          <span className="qc-nav-count">{data.projects.length}</span>
+        </button>
+        <button
+          className={"qc-nav " + (view === "assistant" ? "active" : "")}
+          onClick={() => setView("assistant")}
+        >
+          <span>✧</span>Assistente IA
+        </button>
+        <div className="qc-side-section">
+          <span>PROJETOS</span>
+          <button
+            aria-label="Novo checklist"
+            onClick={() => setModal({ type: "project" })}
+          >
+            ＋
+          </button>
+        </div>
+        {data.projects.map((p) => (
+          <button
+            key={p.id}
+            className={
+              "qc-project-nav " + (project.id === p.id ? "selected" : "")
+            }
+            onClick={() => setProject(p.id)}
+          >
+            <span className={"qc-project-symbol " + p.color}>{p.icon}</span>
+            <span>{p.name}</span>
+            {project.id === p.id && <span className="qc-selected-dot" />}
+          </button>
+        ))}
+        <button
+          className="qc-mobile-project"
+          aria-label="Criar novo checklist"
+          onClick={() => setModal({ type: "project" })}
+        >
+          ＋
+        </button>
+        <button
+          className="qc-create-link"
+          onClick={() => setModal({ type: "project" })}
+        >
+          ＋ Criar checklist
+        </button>
+        <div className="qc-sidebar-bottom">
+          <div className="qc-small-plant" aria-hidden="true">
+            ♧
+          </div>
+          <strong>
+            Grandes planos.
+            <br />
+            Pequenos checklists.
+          </strong>
+          <p>Do primeiro apê ao próximo destino.</p>
+          <button
+            className="qc-nav"
+            onClick={() => setModal({ type: "template" })}
+          >
+            <span>▦</span>Templates de importação
+          </button>
+          <div className="qc-user">
+            <span className="qc-avatar mini">P</span>
+            <span>
+              Meu planejamento<small>Prévia pessoal</small>
+            </span>
+            <span>⌄</span>
+          </div>
+        </div>
+      </aside>
+      <div className="qc-main">
+        <header className="qc-topbar">
+          <span>
+            Meus checklists <span className="qc-slash">/</span>{" "}
+            <strong>{project.name}</strong>
+          </span>
+          <span className="qc-local">
+            <span /> {cloud ? "Conta conectada" : "Salvo neste navegador"}
+          </span>
+        </header>
+        <main className="qc-content">
+          <div className="qc-heading">
+            <div>
+              <div className="qc-eyebrow">CADA DETALHE, NO SEU LUGAR</div>
+              <h1>
+                {project.name}
+                <span className="qc-title-dot">.</span>
+              </h1>
+              <p>{project.description}</p>
+            </div>
+            <div className="qc-heading-actions">
+              <button
+                className="qc-button"
+                onClick={() => setModal({ type: "settings" })}
+              >
+                Gerenciar
+              </button>
+              <button className="qc-button" onClick={() => openGallery()}>
+                ▧ Galerias
+              </button>
+              <button className="qc-button" onClick={openImport}>
+                <span>↥</span> Importar planilha
+              </button>
+              <button
+                className="qc-button qc-primary"
+                onClick={() => newItem()}
+              >
+                <span>＋</span> Novo item
+              </button>
+            </div>
+          </div>
+          <div className="qc-metrics">
+            <div className="qc-metric">
+              <span>Seu progresso</span>
+              <div className="qc-metric-number">
+                {stats.bought}
+                <small> / {stats.count} itens</small>
+                <b>{progress}%</b>
+              </div>
+              <div className="qc-progress">
+                <i style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+            <button
+              className="qc-metric qc-metric-button"
+              onClick={() => setModal({ type: "budget" })}
+            >
+              <span>
+                Orçamento do projeto <span>↗</span>
+              </span>
+              <div className="qc-metric-number">{money(project.budget)}</div>
+              <small>Planejado: {money(stats.planned)}</small>
+            </button>
+            <div className="qc-metric">
+              <span>Já investido</span>
+              <div className="qc-metric-number">{money(stats.paid)}</div>
+              <small>{stats.bought} compras registradas</small>
+            </div>
+            <div className="qc-metric">
+              <span>Saldo do orçamento</span>
+              <div
+                className={
+                  "qc-metric-number " +
+                  (project.budget - stats.paid < 0 ? "qc-negative" : "qc-green")
+                }
+              >
+                {money(project.budget - stats.paid)}
+              </div>
+              <small>
+                {stats.planned > project.budget
+                  ? "Planejamento acima do orçamento"
+                  : "Cada compra, uma conquista"}
+              </small>
+            </div>
+          </div>
+          <nav className="qc-rooms" aria-label="Ambientes">
+            <button
+              className={room === "Todos" ? "active" : ""}
+              onClick={() => setRoom("Todos")}
+            >
+              ▦ <span>Todos os ambientes</span>
+            </button>
+            {rooms.map((r) => (
+              <button
+                key={r}
+                className={room === r ? "active" : ""}
+                onClick={() => setRoom(r)}
+              >
+                <span className="qc-room-symbol">{roomSymbols[r] || "◇"}</span>
+                {r}
+                <small>
+                  {leafItems(items.filter((i) => i.room === r)).length}
+                </small>
+              </button>
+            ))}
+            <button
+              className="qc-room-add"
+              aria-label="Adicionar ambiente"
+              onClick={() => setModal({ type: "room" })}
+            >
+              ＋
+            </button>
+          </nav>
+          <div className="qc-viewline">
+            <div className="qc-view-tabs" aria-label="Visualização">
+              {[
+                ["checklist", "☷", "Checklist"],
+                ["kanban", "▥", "Kanban"],
+                ["budget", "◴", "Orçamento"],
+                ["assistant", "✧", "IA"],
+              ].map(([id, icon, label]) => (
+                <button
+                  key={id}
+                  className={view === id ? "active" : ""}
+                  aria-pressed={view === id}
+                  onClick={() => setView(id)}
+                >
+                  <span>{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button className="qc-export" onClick={exportItems}>
+              ↧ <span>Exportar</span>
+            </button>
+          </div>
+          {view !== "assistant" && (
+            <div className="qc-toolbar">
+              <label className="qc-search">
+                <span>⌕</span>
+                <input
+                  aria-label="Buscar itens"
+                  placeholder="Buscar um item no seu checklist..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button
+                    aria-label="Limpar busca"
+                    onClick={() => setSearch("")}
+                  >
+                    ×
+                  </button>
+                )}
+              </label>
+              <select
+                aria-label="Filtrar por status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="Todos">Todos os status</option>
+                {STATUSES.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+              <select
+                aria-label="Ordenar itens"
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+              >
+                <option value="category">Por categoria</option>
+                <option value="price">Menor valor previsto</option>
+                <option value="priority">Maior prioridade</option>
+              </select>
+            </div>
+          )}
+          {view === "checklist" && (
+            <section className="qc-list" aria-label="Checklist de compras">
+              <div className="qc-table-head">
+                <span>ITEM / ESPECIFICAÇÕES</span>
+                <span>QTD.</span>
+                <span>PREVISTO</span>
+                <span>STATUS</span>
+                <span />
+              </div>
+              {groups.map((category) => (
+                <div key={category} className="qc-category">
+                  <div className="qc-category-head">
+                    <span className="qc-category-mark">
+                      {category.includes("Eletro")
+                        ? "▣"
+                        : category.includes("marcenaria")
+                          ? "▧"
+                          : "◇"}
+                    </span>
+                    <strong>{category}</strong>
+                    <span className="qc-cat-count">
+                      {
+                        leafItems(scoped.filter((i) => i.category === category))
+                          .length
+                      }
+                    </span>
+                    <span className="qc-category-total">
+                      {money(
+                        leafItems(
+                          scoped.filter((i) => i.category === category),
+                        ).reduce((sum, i) => sum + i.qty * i.unitBudget, 0),
+                      )}
+                    </span>
+                    <button
+                      className="qc-category-reference"
+                      aria-label={`Referências de ${category}`}
+                      onClick={() => openGallery(category)}
+                    >
+                      ▧ Referências
+                      {galleryPhotos(category).length
+                        ? ` (${galleryPhotos(category).length})`
+                        : ""}
+                    </button>
+                  </div>
+                  <CategoryReferenceStrip
+                    photos={galleryPhotos(category)}
+                    onOpen={() => openGallery(category)}
+                  />
+                  {sorted
+                    .filter((i) => i.category === category)
+                    .map((i) => (
+                      <Row key={i.id} item={i} />
+                    ))}
+                </div>
+              ))}
+              {!groups.length && (
+                <div className="qc-empty">
+                  <span>☷</span>
+                  <h3>
+                    {search || statusFilter !== "Todos"
+                      ? "Nenhum item com esses filtros"
+                      : "Espaço para os seus planos"}
+                  </h3>
+                  <p>Adicione um item ou importe sua primeira planilha.</p>
+                  <button
+                    className="qc-button qc-primary"
+                    onClick={() => newItem()}
+                  >
+                    ＋ Adicionar item
+                  </button>
+                </div>
+              )}
+              <button className="qc-add-row" onClick={() => newItem()}>
+                ＋ Adicionar item{room !== "Todos" ? ` em ${room}` : ""}
+              </button>
+            </section>
+          )}
+          {view === "kanban" && (
+            <section className="qc-kanban" aria-label="Kanban de compras">
+              {STATUSES.map((status) => (
+                <div
+                  key={status}
+                  className={
+                    "qc-kanban-column " + (dropId === status ? "dragover" : "")
+                  }
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDropId(status);
+                  }}
+                  onDragLeave={() => setDropId(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const i = items.find(
+                      (x) => x.id === e.dataTransfer.getData("text/plain"),
+                    );
+                    if (i) move(i, status);
+                    setDropId(null);
+                  }}
+                >
+                  <h3>
+                    <span className={"qc-dot " + statusClass(status)} />
+                    {status}
+                    <small>
+                      {
+                        leafItems(scoped).filter((i) => i.status === status)
+                          .length
+                      }
+                    </small>
+                  </h3>
+                  {leafItems(scoped)
+                    .filter((i) => i.status === status)
+                    .map((i) => (
+                      <article
+                        key={i.id}
+                        draggable
+                        onDragStart={(e) =>
+                          e.dataTransfer.setData("text/plain", i.id)
+                        }
+                        className="qc-kanban-card"
+                      >
+                        <div className="qc-card-top">
+                          <small>{i.room}</small>
+                          <button
+                            aria-label={`Detalhes de ${i.name}`}
+                            onClick={() => openItem(i.id)}
+                          >
+                            ↗
+                          </button>
+                        </div>
+                        <button
+                          className="qc-card-name"
+                          onClick={() => openItem(i.id)}
+                        >
+                          {i.name}
+                        </button>
+                        <p>{i.category}</p>
+                        <button
+                          className="qc-kanban-offers"
+                          onClick={() => openItem(i.id, "offers")}
+                        >
+                          ✧ Buscar opções
+                        </button>
+                        <div className="qc-card-bottom">
+                          <strong>
+                            {money(
+                              isBought(i) ? i.paidTotal : i.qty * i.unitBudget,
+                            )}
+                          </strong>
+                          <span>{i.qty} un.</span>
+                        </div>
+                        <select
+                          aria-label={`Mover ${i.name}`}
+                          value={i.status}
+                          onChange={(e) => move(i, e.target.value)}
+                        >
+                          {STATUSES.map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                      </article>
+                    ))}
+                  <button className="qc-kanban-add" onClick={() => newItem()}>
+                    ＋ Novo item
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+          {view === "budget" && (
+            <section className="qc-budget-view">
+              <div className="qc-section-title">
+                <div>
+                  <h2>Um olhar para o seu orçamento</h2>
+                  <p>Valores consolidados, sem contar subitens duas vezes.</p>
+                </div>
+                <button
+                  className="qc-button"
+                  onClick={() => setModal({ type: "budget" })}
+                >
+                  Editar limite
+                </button>
+              </div>
+              <div className="qc-budget-table">
+                <div className="qc-budget-line header">
+                  <span>Ambiente</span>
+                  <span>Previsto</span>
+                  <span>Pago</span>
+                  <span>A comprar¹</span>
+                </div>
+                {rooms
+                  .filter((r) => room === "Todos" || room === r)
+                  .map((r) => {
+                    const t = totals(items.filter((i) => i.room === r));
+                    const pending = leafItems(items.filter((i) => i.room === r))
+                      .filter((i) => !isBought(i))
+                      .reduce((s, i) => s + i.qty * i.unitBudget, 0);
+                    return (
+                      <div className="qc-budget-line" key={r}>
+                        <strong>{r}</strong>
+                        <span>{money(t.planned)}</span>
+                        <span>{money(t.paid)}</span>
+                        <span>{money(pending)}</span>
+                      </div>
+                    );
+                  })}
+              </div>
+              <p className="qc-muted">
+                ¹ Estimativa dos itens pendentes; compras já registradas usam o
+                valor efetivamente pago.
+              </p>
+              <h3>Como você pagou</h3>
+              <div className="qc-payment-list">
+                {METHODS.filter((m) =>
+                  items.some((i) => i.paymentMethod === m && isBought(i)),
+                ).map((m) => (
+                  <div key={m}>
+                    <span>{m}</span>
+                    <strong>
+                      {money(
+                        leafItems(items)
+                          .filter((i) => i.paymentMethod === m)
+                          .reduce((s, i) => s + i.paidTotal, 0),
+                      )}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <div className="qc-note">
+                Compras parceladas entram pelo valor total da compra. Esta v1
+                não calcula vencimentos ou fatura mensal.
+              </div>
+            </section>
+          )}
+          {view === "assistant" && (
+            <AssistantPanel
+              key={project.id}
+              projectId={project.id}
+              cloud={cloud}
+            />
+          )}
+          {view === "checklist" && (
+            <div className="qc-ai-strip">
+              <span className="qc-ai-icon">✧</span>
+              <div>
+                <strong>Comprar bem também faz parte do plano.</strong>
+                <p>Compare opções e acompanhe preços antes de decidir.</p>
+              </div>
+              <button
+                onClick={() => {
+                  const i =
+                    leafItems(scoped).find((i) => !isBought(i)) ||
+                    leafItems(items)[0];
+                  if (i) openItem(i.id, "offers");
+                  else setView("assistant");
+                }}
+              >
+                Explorar com IA <span>↗</span>
+              </button>
+            </div>
+          )}
+          <footer className="qc-footer">
+            <span>Feito para os seus próximos começos.</span>
+            <span>
+              YOUR CHECKLIST <b>AI</b>
+            </span>
+          </footer>
+        </main>
+      </div>
+
+      {selected && (
+        <div
+          className="qc-overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSelectedId(null);
+          }}
+        >
+          <section
+            className="qc-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="qc-item-title"
+          >
+            <div className="qc-drawer-top">
+              <span>
+                {selected.room} <span>/</span> {selected.category}
+              </span>
+              <button
+                aria-label="Fechar detalhes"
+                onClick={() => setSelectedId(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="qc-detail-hero">
+              <ProductArt name={selected.name} />
+              <Badge status={selected.status} />
+              <h2 id="qc-item-title">{selected.name}</h2>
+              <p>
+                {selected.qty} unidade{selected.qty > 1 ? "s" : ""} · prioridade{" "}
+                {selected.priority.toLowerCase()}
+              </p>
+            </div>
+            <div className="qc-detail-tabs">
+              {[
+                ["details", "Detalhes"],
+                ["offers", "Buscar opções"],
+                ["history", "Histórico"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  className={detailTab === key ? "active" : ""}
+                  onClick={() => setDetailTab(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {detailTab === "details" && (
+              <div className="qc-detail-content">
+                <div className="qc-detail-values">
+                  <div>
+                    <span>Valor previsto total</span>
+                    <strong>{money(itemCost(selected, items))}</strong>
+                  </div>
+                  <div>
+                    <span>Valor pago total</span>
+                    <strong>{money(itemCost(selected, items, true))}</strong>
+                  </div>
+                </div>
+                <label className="qc-field">
+                  <span>Status de compra</span>
+                  <select
+                    value={selected.status}
+                    disabled={items.some((i) => i.parentId === selected.id)}
+                    onChange={(e) => move(selected, e.target.value)}
+                  >
+                    {STATUSES.map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                <h3>Especificações e observações</h3>
+                <p className="qc-specs">
+                  {selected.notes ||
+                    "Nenhuma observação adicionada. Edite o item para incluir medidas, cores ou marcas preferidas."}
+                </p>
+                {isBought(selected) && (
+                  <div className="qc-purchase-summary">
+                    <h3>Compra registrada</h3>
+                    <p>
+                      {selected.paymentMethod}
+                      {selected.installments > 1
+                        ? ` · ${selected.installments}x de ${money(selected.paidTotal / selected.installments)}`
+                        : ""}
+                    </p>
+                    <p>
+                      {selected.purchaseDate?.split("-").reverse().join("/")} ·{" "}
+                      {selected.store || "Loja não informada"}
+                    </p>
+                    <button
+                      className="qc-text-button"
+                      onClick={() => purchase(selected, selected.status)}
+                    >
+                      Editar registro de compra
+                    </button>
+                  </div>
+                )}
+                {selected.url && (
+                  <a
+                    className="qc-button"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    href={safeUrl(selected.url)}
+                  >
+                    Abrir link salvo ↗
+                  </a>
+                )}
+                <div className="qc-subitems">
+                  <h3>
+                    Subitens{" "}
+                    <small>
+                      {items.filter((i) => i.parentId === selected.id).length}
+                    </small>
+                  </h3>
+                  {items
+                    .filter((i) => i.parentId === selected.id)
+                    .map((i) => (
+                      <div key={i.id}>
+                        <input
+                          type="checkbox"
+                          checked={isBought(i)}
+                          aria-label={`Comprar ${i.name}`}
+                          onChange={() => toggle(i)}
+                        />
+                        <button
+                          className="qc-plain"
+                          onClick={() => openItem(i.id)}
+                        >
+                          {i.name}
+                        </button>
+                        <span>{money(i.qty * i.unitBudget)}</span>
+                      </div>
+                    ))}
+                  {!isBought(selected) && !selected.parentId && (
+                    <button
+                      className="qc-button"
+                      onClick={() => {
+                        const id = selected.id;
+                        setSelectedId(null);
+                        newItem(id);
+                      }}
+                    >
+                      ＋ Adicionar subitem
+                    </button>
+                  )}
+                  <small className="qc-muted">
+                    O valor de um item com subitens é a soma deles.
+                  </small>
+                </div>
+                <div className="qc-detail-actions">
+                  <button
+                    className="qc-button"
+                    onClick={() => {
+                      const id = selected.id;
+                      setSelectedId(null);
+                      setModal({ type: "item", editId: id });
+                    }}
+                  >
+                    Editar item
+                  </button>
+                  <button
+                    className="qc-button qc-danger"
+                    onClick={() => {
+                      setModal({ type: "delete", id: selected.id });
+                      setSelectedId(null);
+                    }}
+                  >
+                    Excluir
+                  </button>
+                  {!items.some((i) => i.parentId === selected.id) &&
+                    !isBought(selected) && (
+                      <button
+                        className="qc-button qc-primary"
+                        onClick={() => purchase(selected)}
+                      >
+                        ✓ Registrar compra
+                      </button>
+                    )}
+                </div>
+              </div>
+            )}
+            {detailTab === "offers" && (
+              <OffersPanel
+                key={selected.id}
+                item={selected}
+                cloud={cloud}
+                onResults={(offers) => setData((d) => addLiveOffers(d, offers))}
+                importedOffers={data.offers.filter(
+                  (o) => o.itemId === selected.id,
+                )}
+                onImport={() =>
+                  openImport({ kind: "offers", itemId: selected.id })
+                }
+                onTemplate={(format) => offerTemplateDownload(format, selected)}
+                onExport={() =>
+                  download(
+                    "opcoes-pesquisadas.csv",
+                    csvString(
+                      offersToRows(
+                        data.offers.filter((o) => o.itemId === selected.id),
+                        items,
+                      ),
+                      OFFER_FIELDS,
+                    ),
+                  )
+                }
+                onChoose={(offer) => {
+                  setModal({
+                    type: "purchase",
+                    id: selected.id,
+                    after: "Comprado",
+                    offer,
+                  });
+                  setSelectedId(null);
+                }}
+              />
+            )}
+            {detailTab === "history" && (
+              <OfferHistory
+                records={data.offers.filter((o) => o.itemId === selected.id)}
+                onImport={() =>
+                  openImport({ kind: "offers", itemId: selected.id })
+                }
+              />
+            )}
+          </section>
+        </div>
+      )}
+
+      {modal && (
+        <div
+          className="qc-overlay qc-modal-overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setModal(null);
+          }}
+        >
+          <section
+            className={
+              "qc-modal " +
+              (["import", "template", "gallery"].includes(modal.type)
+                ? "large"
+                : "")
+            }
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="qc-modal-title"
+          >
+            <div className="qc-modal-header">
+              <div>
+                <div className="qc-eyebrow">YOUR CHECKLIST</div>
+                <h2 id="qc-modal-title">
+                  {
+                    {
+                      item: modal.editId
+                        ? "Editar item"
+                        : modal.parentId
+                          ? "Novo subitem"
+                          : "Um novo item no plano",
+                      purchase: "Mais uma conquista",
+                      import: "Da planilha para o seu plano",
+                      template: "Seu template de importação",
+                      project: "O que vamos planejar?",
+                      budget: "Orçamento do projeto",
+                      room: "Um novo ambiente",
+                      delete: "Excluir este item?",
+                      reopen: "Reabrir este item?",
+                      gallery: "Referências por categoria",
+                      settings: "Organizar este checklist",
+                    }[modal.type]
+                  }
+                </h2>
+              </div>
+              <button
+                aria-label="Fechar janela"
+                onClick={
+                  modal.type === "import" ? closeImport : () => setModal(null)
+                }
+              >
+                ×
+              </button>
+            </div>
+            {modal.type === "settings" && (
+              <ProjectSettings
+                project={project}
+                rooms={rooms}
+                categories={galleryCategories}
+                onAction={applyStructure}
+              />
+            )}
+            {modal.type === "gallery" && (
+              <CategoryGallery
+                cloud={!!cloud}
+                key={project.id}
+                category={modal.category}
+                categories={galleryCategories}
+                record={gallery.records.find(
+                  (entry) =>
+                    normalize(entry.category) === normalize(modal.category),
+                )}
+                ready={gallery.ready}
+                storageError={gallery.error}
+                onRetry={gallery.reload}
+                onChange={gallery.change}
+                onCategoryChange={(category) =>
+                  setModal((current) => ({ ...current, category }))
+                }
+                onAddItem={(category) => setModal({ type: "item", category })}
+              />
+            )}
+            {modal.type === "item" &&
+              (() => {
+                const i = items.find((x) => x.id === modal.editId) || {};
+                const parent = items.find((x) => x.id === modal.parentId);
+                return (
+                  <form onSubmit={saveItem}>
+                    <div className="qc-form-grid">
+                      <Field label="Nome do item *" wide>
+                        <input
+                          name="name"
+                          required
+                          autoComplete="off"
+                          defaultValue={i.name || ""}
+                          placeholder="Ex.: Geladeira frost free"
+                          maxLength={160}
+                        />
+                      </Field>
+                      <Field label="Ambiente *">
+                        <input
+                          name="room"
+                          list="qc-room-options"
+                          required
+                          defaultValue={
+                            parent?.room ||
+                            i.room ||
+                            (room !== "Todos" ? room : "")
+                          }
+                          readOnly={!!parent}
+                          placeholder="Ex.: Cozinha"
+                          maxLength={80}
+                        />
+                        <datalist id="qc-room-options">
+                          {rooms.map((r) => (
+                            <option key={r}>{r}</option>
+                          ))}
+                        </datalist>
+                      </Field>
+                      <Field label="Categoria *">
+                        <input
+                          name="category"
+                          list="qc-cat-options"
+                          required
+                          defaultValue={
+                            parent?.category ||
+                            i.category ||
+                            modal.category ||
+                            ""
+                          }
+                          readOnly={!!parent}
+                          placeholder="Ex.: Eletrodomésticos"
+                          maxLength={80}
+                        />
+                        <datalist id="qc-cat-options">
+                          {galleryCategories.map((r) => (
+                            <option key={r}>{r}</option>
+                          ))}
+                        </datalist>
+                      </Field>
+                      <Field label="Quantidade *">
+                        <input
+                          name="qty"
+                          type="number"
+                          min="1"
+                          step="1"
+                          required
+                          defaultValue={i.qty || 1}
+                        />
+                      </Field>
+                      <Field label="Valor previsto unitário (R$)">
+                        <input
+                          name="unitBudget"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          required
+                          defaultValue={i.unitBudget || 0}
+                        />
+                      </Field>
+                      <Field label="Prioridade">
+                        <select
+                          name="priority"
+                          defaultValue={i.priority || "Média"}
+                        >
+                          {["Alta", "Média", "Baixa"].map((p) => (
+                            <option key={p}>{p}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Link de referência">
+                        <input
+                          name="url"
+                          type="url"
+                          defaultValue={i.url || ""}
+                          placeholder="https://..."
+                        />
+                      </Field>
+                      <Field label="Especificações e observações" wide>
+                        <textarea
+                          name="notes"
+                          rows="3"
+                          defaultValue={i.notes || ""}
+                          placeholder="Medidas, voltagem, cores, marcas..."
+                          maxLength={3000}
+                        />
+                      </Field>
+                    </div>
+                    {parent && (
+                      <p className="qc-note">
+                        Subitem de {parent.name}. Ambiente e categoria são
+                        herdados.
+                      </p>
+                    )}
+                    <div className="qc-form-footer">
+                      <button
+                        type="button"
+                        className="qc-button"
+                        onClick={() => setModal(null)}
+                      >
+                        Cancelar
+                      </button>
+                      <button className="qc-button qc-primary" type="submit">
+                        {modal.editId
+                          ? "Salvar alterações"
+                          : "＋ Adicionar ao checklist"}
+                      </button>
+                    </div>
+                  </form>
+                );
+              })()}
+            {modal.type === "purchase" &&
+              (() => {
+                const i = items.find((x) => x.id === modal.id);
+                return (
+                  <form onSubmit={savePurchase}>
+                    <div className="qc-purchase-item">
+                      <ProductArt name={i.name} small />
+                      <div>
+                        <strong>{i.name}</strong>
+                        <small>
+                          {i.qty} un. · previsto {money(i.qty * i.unitBudget)}
+                        </small>
+                      </div>
+                    </div>
+                    <div className="qc-form-grid">
+                      <Field label="Valor pago total, com frete (R$) *">
+                        <input
+                          name="paidTotal"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          required
+                          defaultValue={
+                            modal.offer
+                              ? modal.offer.price * i.qty +
+                                (modal.offer.shipping ?? 0)
+                              : i.paidTotal || i.qty * i.unitBudget
+                          }
+                        />
+                      </Field>
+                      <Field label="Data da compra *">
+                        <input
+                          name="date"
+                          type="date"
+                          required
+                          max={today()}
+                          defaultValue={i.purchaseDate || today()}
+                        />
+                      </Field>
+                      <Field label="Forma de pagamento *">
+                        <select
+                          name="method"
+                          defaultValue={i.paymentMethod || "Pix"}
+                        >
+                          {METHODS.map((m) => (
+                            <option key={m}>{m}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Parcelas (cartão de crédito)">
+                        <input
+                          name="installments"
+                          type="number"
+                          min="1"
+                          max="120"
+                          required
+                          defaultValue={i.installments || 1}
+                        />
+                      </Field>
+                      <Field label="Loja">
+                        <input
+                          name="store"
+                          defaultValue={modal.offer?.store || i.store}
+                          placeholder="Onde você comprou?"
+                        />
+                      </Field>
+                      <Field label="Link do produto">
+                        <input
+                          type="url"
+                          name="url"
+                          defaultValue={modal.offer?.url || i.url}
+                          placeholder="https://..."
+                        />
+                      </Field>
+                      <Field label="Observações" wide>
+                        <textarea
+                          name="notes"
+                          rows="2"
+                          defaultValue={i.notes}
+                          placeholder="Prazo de entrega, número do pedido..."
+                        />
+                      </Field>
+                    </div>
+                    {modal.offer && modal.offer.shipping === null && (
+                      <p className="qc-demo-note">
+                        O frete não foi informado pela fonte. Inclua o valor
+                        final no total pago.
+                      </p>
+                    )}
+                    {modal.offer?.source === "demo" && (
+                      <p className="qc-demo-note">
+                        Oferta fictícia selecionada. Confirme o valor antes de
+                        salvar.
+                      </p>
+                    )}
+                    <div className="qc-form-footer">
+                      <button
+                        type="button"
+                        className="qc-button"
+                        onClick={() => setModal(null)}
+                      >
+                        Cancelar
+                      </button>
+                      <button className="qc-button qc-primary" type="submit">
+                        ✓ Confirmar compra
+                      </button>
+                    </div>
+                  </form>
+                );
+              })()}
+            {modal.type === "import" && (
+              <div>
+                <p className="qc-modal-description">
+                  Importe itens da arquiteta, sua lista de viagem ou registros
+                  de preços.
+                </p>
+                {importKind === "offers" && (
+                  <div className="qc-offer-import-context">
+                    <strong>
+                      {importItem
+                        ? `Opções para: ${importItem.name}`
+                        : "Ofertas de todo o projeto"}
+                    </strong>
+                    <p>
+                      {importItem
+                        ? `${importItem.room} · ${importItem.category} · ID: ${importItem.id}`
+                        : "Informe item_id ou o nome do item com ambiente/categoria para vincular cada opção."}
+                    </p>
+                    <small>
+                      Campos essenciais: nome, preço, link e data da consulta.
+                      Frete vazio = desconhecido; 0 = grátis. Nota, avaliações e
+                      imagem_url são opcionais. Use o link HTTPS direto da foto
+                      do produto.
+                    </small>
+                  </div>
+                )}
+                <div className="qc-import-tabs">
+                  <button
+                    className={importKind === "items" ? "active" : ""}
+                    onClick={() => changeImportKind("items")}
+                  >
+                    Itens do checklist
+                  </button>
+                  <button
+                    className={importKind === "offers" ? "active" : ""}
+                    onClick={() => changeImportKind("offers")}
+                  >
+                    Ofertas e histórico
+                  </button>
+                </div>
+                <div className="qc-import-method" aria-label="Origem dos dados">
+                  <div>
+                    <button
+                      aria-pressed={importSource === "file"}
+                      onClick={() => switchImportSource("file")}
+                    >
+                      Enviar arquivo
+                    </button>
+                    <button
+                      aria-pressed={importSource === "paste"}
+                      onClick={() => switchImportSource("paste")}
+                    >
+                      Colar CSV
+                    </button>
+                  </div>
+                  <button className="qc-text-button" onClick={exampleCSV}>
+                    Experimentar com exemplo
+                  </button>
+                </div>
+                {importSource === "file" ? (
+                  <div
+                    className="qc-upload"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      readFile(e.dataTransfer.files[0]);
+                    }}
+                  >
+                    <span>↥</span>
+                    <strong>
+                      {reading
+                        ? "Lendo planilha..."
+                        : fileRows.length
+                          ? fileName
+                          : "Sua lista ganha vida aqui"}
+                    </strong>
+                    <p>Arraste um arquivo ou selecione no computador</p>
+                    <button
+                      className="qc-button"
+                      disabled={reading}
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      Selecionar arquivo
+                    </button>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      hidden
+                      onChange={(e) => {
+                        readFile(e.target.files[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                    <small>CSV, XLSX ou XLS · até 5 MB · primeira aba</small>
+                  </div>
+                ) : (
+                  <div className="qc-paste-area">
+                    <label className="qc-field">
+                      <span>Conteúdo CSV com cabeçalhos</span>
+                      <textarea
+                        aria-label="Conteúdo CSV"
+                        rows="5"
+                        value={csvDraft}
+                        placeholder={
+                          importKind === "items"
+                            ? "ambiente;categoria;item;quantidade;valor_previsto_unitario"
+                            : "nome;preco;link;data_consulta;loja;frete;nota;avaliacoes"
+                        }
+                        onChange={(e) => {
+                          setCsvDraft(e.target.value);
+                          setFileRows([]);
+                          setImportError("");
+                        }}
+                      />
+                    </label>
+                    <div>
+                      <small>Separador: vírgula ou ponto e vírgula.</small>
+                      <button
+                        className="qc-button"
+                        disabled={!csvDraft.trim()}
+                        onClick={() => reviewCSV()}
+                      >
+                        Revisar CSV →
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="qc-template-actions">
+                  <button
+                    className="qc-text-button"
+                    onClick={() =>
+                      importKind === "items"
+                        ? templateDownload()
+                        : offerTemplateDownload()
+                    }
+                  >
+                    ↧ Baixar template CSV
+                  </button>
+                  <button
+                    className="qc-text-button"
+                    onClick={() =>
+                      importKind === "items"
+                        ? templateDownload("xlsx")
+                        : offerTemplateDownload("xlsx")
+                    }
+                  >
+                    ↧ Template Excel
+                  </button>
+                  {importKind === "items" && (
+                    <>
+                      <button
+                        className="qc-text-button"
+                        onClick={() => setModal({ type: "template" })}
+                      >
+                        Personalizar colunas
+                      </button>
+                    </>
+                  )}
+                </div>
+                {importError && (
+                  <p className="qc-error" role="alert">
+                    {importError}
+                  </p>
+                )}
+                {fileRows.length > 0 && (
+                  <div className="qc-import-review">
+                    <h3>
+                      Revise antes de importar{" "}
+                      <small>{fileRows.length} linhas</small>
+                    </h3>
+                    {importKind === "items" && (
+                      <div className="qc-mapping">
+                        {FIELDS.filter(
+                          ([key, , required]) =>
+                            required ||
+                            [
+                              "quantidade",
+                              "valor_previsto_unitario",
+                              "item_pai",
+                              "status",
+                            ].includes(key),
+                        ).map(([key, label, required]) => (
+                          <Field
+                            key={key}
+                            label={label + (required ? " *" : "")}
+                          >
+                            <select
+                              aria-label={`Coluna ${label}`}
+                              value={mapping[key] || ""}
+                              onChange={(e) =>
+                                setMapping({
+                                  ...mapping,
+                                  [key]: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">
+                                {required
+                                  ? "Selecionar coluna"
+                                  : "Usar padrão / vazio"}
+                              </option>
+                              {Object.keys(fileRows[0]).map((c) => (
+                                <option key={c}>{c}</option>
+                              ))}
+                            </select>
+                          </Field>
+                        ))}
+                      </div>
+                    )}
+                    {importKind === "offers" && (
+                      <div className="qc-mapping">
+                        {OFFER_COLUMNS.map(([key, label, required]) => (
+                          <Field
+                            key={key}
+                            label={label + (required ? " *" : "")}
+                          >
+                            <select
+                              aria-label={`Coluna de oferta ${label}`}
+                              value={mapping[key] || ""}
+                              onChange={(e) =>
+                                setMapping({
+                                  ...mapping,
+                                  [key]: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">
+                                {required
+                                  ? "Selecionar coluna"
+                                  : "Vazio / padrão do item"}
+                              </option>
+                              {Object.keys(fileRows[0]).map((c) => (
+                                <option key={c}>{c}</option>
+                              ))}
+                            </select>
+                          </Field>
+                        ))}
+                      </div>
+                    )}
+                    {importKind === "items" ? (
+                      <div className="qc-import-preview">
+                        {fileRows.slice(0, 3).map((r, index) => (
+                          <div key={index}>
+                            <strong>{r[mapping.item] || "Sem item"}</strong>
+                            <span>{r[mapping.ambiente] || "Sem ambiente"}</span>
+                            <span>
+                              {r[mapping.categoria] || "Sem categoria"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="qc-offer-import-preview">
+                        {importResult?.offers.slice(0, 5).map((o) => (
+                          <article key={o.id}>
+                            <OfferImage
+                              src={o.imageUrl}
+                              name={o.model}
+                              compact
+                            />
+                            <div>
+                              <strong>{o.model}</strong>
+                              <span>
+                                {o.store} · {money(o.price)} ·{" "}
+                                {o.date?.split("-").reverse().join("/")}
+                              </span>
+                              {o.url && (
+                                <a
+                                  href={o.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {o.url}
+                                </a>
+                              )}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                    {offerImportSummary && (
+                      <div className="qc-demo-note" aria-live="polite">
+                        <strong>
+                          {offerImportSummary.newOptions}{" "}
+                          {offerImportSummary.newOptions === 1
+                            ? "nova opção"
+                            : "novas opções"}{" "}
+                          · {offerImportSummary.updatedOptions}{" "}
+                          {offerImportSummary.updatedOptions === 1
+                            ? "opção atualizada"
+                            : "opções atualizadas"}
+                        </strong>
+                        <p>
+                          {offerImportSummary.archivedCount === 1
+                            ? "1 opção atual irá"
+                            : `${offerImportSummary.archivedCount} opções atuais irão`}{" "}
+                          para o histórico.{" "}
+                          {offerImportSummary.historicalImports === 1
+                            ? "1 consulta do arquivo ficará"
+                            : `${offerImportSummary.historicalImports} consultas do arquivo ficarão`}{" "}
+                          somente no histórico.
+                        </p>
+                        <small>
+                          Uma opção por produto: mesmo link ou mesmo nome +
+                          loja. Vale a data mais recente; em empate, a última
+                          linha importada. Cópias idênticas são ignoradas.
+                        </small>
+                      </div>
+                    )}
+                    {importResult?.errors.length > 0 ? (
+                      <div className="qc-error" role="alert">
+                        {importResult.errors.slice(0, 6).map((err, index) => (
+                          <p key={index}>{err}</p>
+                        ))}
+                        {importResult.errors.length > 6 && (
+                          <p>
+                            + {importResult.errors.length - 6} erros. Corrija a
+                            planilha antes de continuar.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="qc-success">
+                        ✓{" "}
+                        {importKind === "items"
+                          ? importResult?.items.length
+                          : importResult?.offers.length}{" "}
+                        registros prontos
+                        {importResult?.duplicates
+                          ? ` · ${importResult.duplicates} duplicados ignorados`
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="qc-form-footer">
+                  <button className="qc-button" onClick={closeImport}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="qc-button qc-primary"
+                    disabled={
+                      !importResult ||
+                      importResult.errors.length > 0 ||
+                      reading ||
+                      (importKind === "items"
+                        ? !importResult.items.length
+                        : !importResult.offers.length)
+                    }
+                    onClick={confirmImport}
+                  >
+                    Importar {importKind === "items" ? "itens" : "registros"} →
+                  </button>
+                </div>
+              </div>
+            )}
+            {modal.type === "template" && (
+              <div>
+                <p className="qc-modal-description">
+                  Defina as colunas do template que você vai compartilhar.
+                  Ambiente, categoria e item são obrigatórios.
+                </p>
+                <div className="qc-template-grid">
+                  {FIELDS.map(([key, label, required]) => (
+                    <label key={key}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          required ||
+                          (
+                            data.templateFields || FIELDS.map((f) => f[0])
+                          ).includes(key)
+                        }
+                        disabled={required}
+                        onChange={(e) =>
+                          setData((d) => ({
+                            ...d,
+                            templateFields: e.target.checked
+                              ? [
+                                  ...(d.templateFields ||
+                                    FIELDS.map((f) => f[0])),
+                                  key,
+                                ]
+                              : (
+                                  d.templateFields || FIELDS.map((f) => f[0])
+                                ).filter((x) => x !== key),
+                          }))
+                        }
+                      />
+                      <span>
+                        {label}
+                        <small>
+                          {key}
+                          {required ? " · obrigatório" : ""}
+                        </small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="qc-note">
+                  Subitens: preencha <b>id</b> para o pai e <b>item_pai</b> com
+                  esse ID nos filhos. Valor previsto é unitário; valor pago é o
+                  total com frete. Datas: AAAA-MM-DD.
+                </div>
+                <div className="qc-form-footer">
+                  <button
+                    className="qc-button"
+                    onClick={() => templateDownload()}
+                  >
+                    ↧ Baixar CSV
+                  </button>
+                  <button
+                    className="qc-button qc-primary"
+                    onClick={() => templateDownload("xlsx")}
+                  >
+                    ↧ Baixar Excel
+                  </button>
+                </div>
+              </div>
+            )}
+            {modal.type === "project" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget),
+                    id = uid();
+                  setData((d) => ({
+                    ...d,
+                    projects: [
+                      ...d.projects,
+                      {
+                        id,
+                        name: String(f.get("name")).trim(),
+                        description: String(
+                          f.get("description") ||
+                            "Seu próximo começo, um item de cada vez.",
+                        ),
+                        budget: Number(f.get("budget")),
+                        icon: "◇",
+                        color: "sage",
+                        rooms: [],
+                      },
+                    ],
+                    items: { ...d.items, [id]: [] },
+                  }));
+                  setProjectId(id);
+                  setRoom("Todos");
+                  setView("checklist");
+                  setSearch("");
+                  setStatusFilter("Todos");
+                  setModal(null);
+                  notify("Seu novo checklist está pronto.");
+                }}
+              >
+                <div className="qc-form-grid">
+                  <Field label="Nome do checklist *" wide>
+                    <input
+                      name="name"
+                      required
+                      maxLength={80}
+                      placeholder="Ex.: Minha casa nova, festa, viagem..."
+                    />
+                  </Field>
+                  <Field label="Descrição" wide>
+                    <input
+                      name="description"
+                      maxLength={160}
+                      placeholder="Um novo espaço. Mil possibilidades."
+                    />
+                  </Field>
+                  <Field label="Orçamento total (R$) *" wide>
+                    <input
+                      name="budget"
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      defaultValue="5000"
+                    />
+                  </Field>
+                </div>
+                <div className="qc-form-footer">
+                  <button className="qc-button qc-primary" type="submit">
+                    Criar checklist →
+                  </button>
+                </div>
+              </form>
+            )}
+            {modal.type === "budget" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  setData((d) => ({
+                    ...d,
+                    projects: d.projects.map((p) =>
+                      p.id === project.id
+                        ? { ...p, budget: Number(f.get("budget")) }
+                        : p,
+                    ),
+                  }));
+                  setModal(null);
+                  notify("Orçamento atualizado.");
+                }}
+              >
+                <Field label="Quanto você pretende investir? (R$)">
+                  <input
+                    type="number"
+                    name="budget"
+                    min="0"
+                    required
+                    step="0.01"
+                    defaultValue={project.budget}
+                  />
+                </Field>
+                <p className="qc-note">
+                  O limite do projeto é independente da soma dos valores
+                  previstos dos itens.
+                </p>
+                <div className="qc-form-footer">
+                  <button className="qc-button qc-primary" type="submit">
+                    Salvar orçamento
+                  </button>
+                </div>
+              </form>
+            )}
+            {modal.type === "room" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const name = String(
+                    new FormData(e.currentTarget).get("room"),
+                  ).trim();
+                  if (!name) return;
+                  setData((d) => ({
+                    ...d,
+                    projects: d.projects.map((p) =>
+                      p.id === project.id
+                        ? {
+                            ...p,
+                            rooms: [...new Set([...(p.rooms || []), name])],
+                          }
+                        : p,
+                    ),
+                  }));
+                  setRoom(name);
+                  setModal(null);
+                }}
+              >
+                <Field label="Nome do ambiente ou grupo *">
+                  <input
+                    name="room"
+                    required
+                    maxLength={80}
+                    placeholder="Ex.: Lavanderia, área externa, mala..."
+                  />
+                </Field>
+                <div className="qc-form-footer">
+                  <button className="qc-button qc-primary" type="submit">
+                    Adicionar ambiente
+                  </button>
+                </div>
+              </form>
+            )}
+            {modal.type === "delete" && (
+              <div>
+                <p>
+                  O item e seus subitens serão removidos, incluindo os registros
+                  de compra e preços.
+                </p>
+                <div className="qc-form-footer">
+                  <button className="qc-button" onClick={() => setModal(null)}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="qc-button qc-danger"
+                    onClick={() => deleteItem(modal.id)}
+                  >
+                    Excluir item
+                  </button>
+                </div>
+              </div>
+            )}
+            {modal.type === "reopen" && (
+              <div>
+                <p>
+                  O registro de compra deste item será limpo. Ele voltará para{" "}
+                  <b>{modal.status}</b>.
+                </p>
+                <div className="qc-form-footer">
+                  <button className="qc-button" onClick={() => setModal(null)}>
+                    Cancelar
+                  </button>
+                  <button
+                    className="qc-button qc-primary"
+                    onClick={() => {
+                      patch(modal.id, {
+                        status: modal.status,
+                        paidTotal: 0,
+                        paymentMethod: "",
+                        installments: 1,
+                        purchaseDate: "",
+                        store: "",
+                      });
+                      setModal(null);
+                      notify("Item reaberto.");
+                    }}
+                  >
+                    Reabrir item
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+      <div
+        className={"qc-toast " + (toast ? "visible" : "")}
+        role="status"
+        aria-live="polite"
+      >
+        ✓ {toast}
+      </div>
+    </div>
+  );
+}

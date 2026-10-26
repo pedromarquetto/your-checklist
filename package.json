@@ -1,6 +1,6 @@
 {
   "name": "your-checklist",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,15 +8,30 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "test": "node --test lib/*.test.mjs",
-    "preview:build": "node scripts/build-preview.mjs"
+    "preview:build": "node scripts/build-preview.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
+    "config:check": "node scripts/check-config.mjs",
+    "test:browser": "node scripts/test-browser.mjs"
   },
   "dependencies": {
+    "@ai-sdk/openai": "4.0.102",
+    "ai": "7.0.153",
+    "better-auth": "1.7.13",
     "next": "^15.5.0",
+    "pg": "8.23.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "xlsx": "0.18.5"
+    "xlsx": "0.18.5",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "@electric-sql/pglite": "0.5.11",
+    "@electric-sql/pglite-socket": "0.2.14",
+    "esbuild": "^0.25.0",
+    "playwright": "1.62.1",
+    "prettier": "3.9.10"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }
