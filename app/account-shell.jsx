@@ -4,7 +4,11 @@ import ChecklistApp from "./checklist-app.jsx";
 import AccountPassword from "./account-password.jsx";
 import { authClient } from "../lib/auth-client.mjs";
 import { api } from "../lib/api-client.mjs";
-import { validateWorkspace, mergeLocalWorkspace } from "../lib/workspace.mjs";
+import {
+  validateWorkspace,
+  mergeLocalWorkspace,
+  migratedRecordId,
+} from "../lib/workspace.mjs";
 import { loadCategoryGalleries } from "../lib/category-gallery.mjs";
 
 const LOCAL = "your-check-list-ai-v1";
@@ -315,12 +319,12 @@ function CloudWorkspace({ session }) {
         id = crypto.randomUUID().slice(0, 12);
         localStorage.setItem(`qc-migration-${session.user.id}`, id);
       }
-      const data = mergeLocalWorkspace(draft.current, local, id);
+      const data = await mergeLocalWorkspace(draft.current, local, id);
       onChange(data);
       await flush();
       commit({ data, revision: revision.current }, true);
       for (const project of local.projects) {
-        const projectId = `m-${id}-${project.id}`.slice(0, 100);
+        const projectId = await migratedRecordId(id, project.id);
         const records = await loadCategoryGalleries(project.id);
         for (const record of records) {
           await api("/api/galleries", {
@@ -379,7 +383,7 @@ function CloudWorkspace({ session }) {
           .slice(0, 6)
           .map((v) => v.toString(16).padStart(2, "0"))
           .join("");
-      const data = mergeLocalWorkspace(draft.current, source, id);
+      const data = await mergeLocalWorkspace(draft.current, source, id);
       onChange(data);
       await flush();
       commit({ data, revision: revision.current }, true);
