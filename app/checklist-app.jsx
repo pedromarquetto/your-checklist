@@ -643,7 +643,10 @@ export default function ChecklistApp({
   function saveItem(e) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const parent = items.find((i) => i.id === modal.parentId);
+    const current = items.find((i) => i.id === modal.editId);
+    const parent = items.find(
+      (i) => i.id === (modal.parentId || current?.parentId),
+    );
     const values = {
       name: String(f.get("name")).trim(),
       room: parent?.room || String(f.get("room")).trim(),
@@ -1794,7 +1797,9 @@ export default function ChecklistApp({
             {modal.type === "item" &&
               (() => {
                 const i = items.find((x) => x.id === modal.editId) || {};
-                const parent = items.find((x) => x.id === modal.parentId);
+                const parent = items.find(
+                  (x) => x.id === (modal.parentId || i.parentId),
+                );
                 return (
                   <form onSubmit={saveItem}>
                     <div className="qc-form-grid">
