@@ -98,6 +98,8 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-O teste sobe PostgreSQL WASM em uma porta TCP temporária e o servidor Next.js de produção, cria uma conta de teste e exercita cadastro, projeto vazio, item, upload real de XLSX, compra, imagem privada, legenda, renomeação, recarga, segunda sessão, layout móvel e conflitos. Tudo é descartado ao terminar. Não usa o Neon nem as chaves de produção. Pode-se indicar um Chromium já instalado com `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. O CI executa esse teste após o build.
+O teste sobe PostgreSQL WASM em uma porta TCP temporária e o servidor Next.js de produção, cria contas de teste e exercita cadastro, projeto vazio, item, upload real de XLSX, compra, imagem privada, legenda, renomeação, recarga, segunda sessão, layout móvel e conflitos. Também cobre edição de subitens, importação repetida de backups com IDs longos e respostas atrasadas da atualização automática/manual, tanto durante alterações pendentes quanto após um novo salvamento. Tudo é descartado ao terminar. Não usa o Neon nem as chaves de produção. Pode-se indicar um Chromium já instalado com `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. O CI executa esse teste após o build.
 
-A validação local de 26/10/2026 passou com 44 testes automatizados, build de produção, prévia estática e o fluxo completo no Chromium. OpenAI/SerpApi foram validados com respostas controladas nos testes de integração; a validação com provedores reais e a Vercel continua dependente de acesso/configuração.
+Para executar uma regressão isolada depois do build, use `BROWSER_REGRESSION=edit-subitem`, `BROWSER_REGRESSION=focus` ou `BROWSER_REGRESSION=backup` antes de `npm run test:browser`. Sem essa variável, o fluxo completo e todas as regressões são executados.
+
+A rodada de 02/11/2026 inclui 46 testes automatizados, build de produção, prévia estática e os fluxos completos no Chromium. OpenAI/SerpApi usam respostas controladas nos testes de integração; esses testes não comprovam acesso a provedores reais. O endereço oficial para validação publicada é `https://your-checklist.vercel.app/`.

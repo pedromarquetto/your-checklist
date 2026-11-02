@@ -271,8 +271,21 @@ function CloudWorkspace({ session }) {
         JSON.stringify(draft.current) !== saved.current
       )
         return;
+      const requestedRevision = revision.current;
+      const requestedSaved = saved.current;
       try {
         const result = await api("/api/workspace");
+        // A clean tab can become dirty (or finish a newer save) during this GET.
+        // Never let an older response clear its pending draft or recovery cache.
+        if (
+          !mounted.current ||
+          blocked.current ||
+          flight.current ||
+          revision.current !== requestedRevision ||
+          saved.current !== requestedSaved ||
+          JSON.stringify(draft.current) !== requestedSaved
+        )
+          return;
         if (
           result.revision !== revision.current ||
           JSON.stringify(result.data) !== saved.current
@@ -294,7 +307,18 @@ function CloudWorkspace({ session }) {
       throw new Error(
         "Há alterações pendentes. Tente salvar antes de recarregar.",
       );
+    const requestedDraft = JSON.stringify(draft.current);
+    const requestedSaved = saved.current;
+    const requestedRevision = revision.current;
     const result = await api("/api/workspace");
+    if (
+      !mounted.current ||
+      flight.current ||
+      JSON.stringify(draft.current) !== requestedDraft ||
+      saved.current !== requestedSaved ||
+      revision.current !== requestedRevision
+    )
+      return;
     commit(result, true);
   }
   async function manage(projectId, operation) {
