@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import { api } from "../lib/api-client.mjs";
-export default function AssistantPanel({ projectId, cloud }) {
+export default function AssistantPanel({ projectId, cloud, simple = false }) {
   const [message, setMessage] = useState(""),
     [replies, setReplies] = useState([]),
     [busy, setBusy] = useState(false),
@@ -46,7 +46,9 @@ export default function AssistantPanel({ projectId, cloud }) {
   return (
     <section className="qc-assistant">
       <span className="qc-ai-orb">✧</span>
-      <div className="qc-eyebrow">ASSISTENTE DE COMPRAS</div>
+      <div className="qc-eyebrow">
+        {simple ? "ASSISTENTE DO CHECKLIST" : "ASSISTENTE DE COMPRAS"}
+      </div>
       <h2>
         Boas escolhas começam
         <br />
@@ -66,8 +68,15 @@ export default function AssistantPanel({ projectId, cloud }) {
       <div className="qc-ai-starters">
         {[
           "O que pode estar faltando na minha lista?",
-          "Quais compras devo priorizar?",
-          "Como posso ajustar o planejamento ao orçamento?",
+          simple
+            ? "Quais tarefas devo priorizar?"
+            : "Quais compras devo priorizar?",
+          ...(simple
+            ? []
+            : [
+                "Como posso ajustar o planejamento ao orçamento?",
+                "Compare Pix, cartão e pontos nas ofertas salvas. O que falta confirmar?",
+              ]),
         ].map((question) => (
           <button
             className="qc-button"
@@ -113,7 +122,8 @@ export default function AssistantPanel({ projectId, cloud }) {
       )}
       <small>
         O assistente analisa seu projeto. Use Buscar opções em um item para
-        consultar preços e ofertas reais.
+        consultar preços. Parcerias e pontos precisam de pesquisa das regras
+        oficiais e cadastro ou importação.
       </small>
     </section>
   );

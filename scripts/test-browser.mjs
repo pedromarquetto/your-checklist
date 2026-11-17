@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { mkdir } from "node:fs/promises";
 import assert from "node:assert/strict";
+import { runPaymentFlows } from "./browser-payments.mjs";
 import { runBrowserRegressions } from "./browser-regressions.mjs";
 
 // Full local stack: Chromium -> production Next.js -> pg/TCP -> PostgreSQL WASM.
@@ -105,7 +106,9 @@ try {
       chromium.executablePath(),
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
-  if (process.env.BROWSER_REGRESSION) {
+  if (process.env.BROWSER_REGRESSION === "payments") {
+    await runPaymentFlows(browser, base);
+  } else if (process.env.BROWSER_REGRESSION) {
     await runBrowserRegressions(browser, base, process.env.BROWSER_REGRESSION);
   } else {
     const desktop = await browser.newContext({
@@ -130,7 +133,9 @@ try {
       .getByRole("heading", { name: "Qual é o seu próximo plano?" })
       .waitFor();
     await page.getByLabel("Nome do checklist").fill("Apartamento QA");
-    await page.getByLabel("Orçamento (R$)", { exact: true }).fill("5000");
+    await page
+      .getByLabel("Orçamento total (R$; opcional)", { exact: true })
+      .fill("5000");
     await page
       .getByRole("button", { name: "Criar checklist", exact: true })
       .click();
@@ -342,6 +347,7 @@ try {
     console.log(
       "Browser flow passed: signup, empty project, items, real XLSX upload, purchase, private image upload, captions, rename, reload, second-device login, responsive layout and conflict protection.",
     );
+    await runPaymentFlows(browser, base);
     await runBrowserRegressions(browser, base);
   }
 } catch (error) {

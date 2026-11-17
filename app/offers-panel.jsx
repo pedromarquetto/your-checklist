@@ -2,14 +2,20 @@
 import React, { useState, useRef, useEffect } from "react";
 import { money, safeUrl, offerResearchPrompt } from "../lib/core.mjs";
 import OfferImage from "./offer-image.jsx";
-import { demoOffers } from "../lib/demo.mjs";
+import PaymentDetails from "./payment-details.jsx";
+import OfferEditor from "./offer-editor.jsx";
 import { filterOffers, totalPrice, latestOffers } from "../lib/offers.mjs";
-import { searchOffers, isInlinePreview } from "../lib/shopping-client.mjs";
+import {
+  searchOffers,
+  researchOffers,
+  isInlinePreview,
+} from "../lib/shopping-client.mjs";
 
 export default function OffersPanel({
   item,
   importedOffers,
   onChoose,
+  onSaveOffer,
   onImport,
   onTemplate,
   onExport,
@@ -17,6 +23,7 @@ export default function OffersPanel({
   cloud = null,
   onResults = () => {},
 }) {
+  const [editing, setEditing] = useState(null);
   const [mode, setMode] = useState(initialMode),
     [query, setQuery] = useState(item.name),
     [live, setLive] = useState([]),
@@ -37,12 +44,11 @@ export default function OffersPanel({
     requestId = useRef(0);
   useEffect(() => () => abort.current?.abort(), []);
   const change = (name, value) => setFilters((f) => ({ ...f, [name]: value }));
-  const base =
-    mode === "example"
-      ? demoOffers(item)
-      : mode === "imported"
-        ? latestOffers(importedOffers)
-        : live;
+  const base = latestOffers(
+    mode === "imported"
+      ? importedOffers.filter((o) => o.source !== "demo")
+      : live.map((o) => importedOffers.find((saved) => saved.id === o.id) || o),
+  );
   const offers = filterOffers(base, { ...filters, budget: item.unitBudget });
   const cheapest = [...offers]
     .filter((o) => totalPrice(o) !== null)
@@ -59,11 +65,21 @@ export default function OffersPanel({
     setObservedAt("");
     try {
       await cloud?.flush();
-      const result = await searchOffers(query, item.id, controller.signal);
+      const result = await (
+        mode === "research" ? researchOffers : searchOffers
+      )(query, item.id, controller.signal);
       if (id === requestId.current) {
         setLive(result.offers);
         setObservedAt(result.observedAt);
         onResults(result.offers);
+        if (mode === "research")
+          setCopyNotice(
+            result.offers.length
+              ? "Pesquisa salva. Confira as fontes e complete as condições pessoais para comparar pontos."
+              : "Nenhuma oferta com fonte verificável foi encontrada. Tente uma busca mais específica.",
+          );
+        if (result.warnings?.length)
+          setCopyNotice((result.warnings || []).join(" "));
       }
     } catch (err) {
       if (err.name !== "AbortError" && id === requestId.current)
@@ -76,6 +92,9 @@ export default function OffersPanel({
     abort.current?.abort();
     requestId.current++;
     setMode(next);
+    setLive([]);
+    setObservedAt("");
+    setCopyNotice("");
     setError("");
     setLoading(false);
   }
@@ -89,9 +108,18 @@ export default function OffersPanel({
       </div>
       <section className="qc-research-import">
         <strong>Traga as opções que você pesquisou.</strong>
-        <p>Peça a pesquisa aqui no chat, importe o CSV e compare neste item.</p>
+        <p>
+          Cadastre uma opção ou importe a pesquisa em CSV, incluindo pagamento e
+          pontos.
+        </p>
         <div>
-          <button className="qc-button qc-primary" onClick={onImport}>
+          <button
+            className="qc-button qc-primary"
+            onClick={() => setEditing({ new: true })}
+          >
+            ＋ Cadastrar opção
+          </button>
+          <button className="qc-button" onClick={onImport}>
             ↥ Importar opções para este item
           </button>
           <button className="qc-button" onClick={() => onTemplate("csv")}>
@@ -132,11 +160,23 @@ export default function OffersPanel({
           <span role="status">{copyNotice}</span>
         </details>
       </section>
+      {editing && (
+        <OfferEditor
+          offer={editing.new ? null : editing}
+          seed={editing.seed}
+          item={item}
+          onClose={() => setEditing(null)}
+          onSave={(offer) => {
+            onSaveOffer(offer);
+            setMode("imported");
+          }}
+        />
+      )}
       <div className="qc-shopping-modes" aria-label="Fonte de ofertas">
         {[
           ["imported", "Salvas"],
-          ["example", "Exemplos"],
           ["live", "Busca ao vivo"],
+          ["research", "Pesquisar preços e pontos com IA"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -147,21 +187,23 @@ export default function OffersPanel({
           </button>
         ))}
       </div>
-      {mode === "example" && (
-        <div className="qc-demo-note">
-          Demonstração: preços, notas e quantidades de avaliações são fictícios.
-          Nenhuma loja foi consultada.
-        </div>
-      )}
       {mode === "imported" && (
         <div className="qc-demo-note">
-          Só uma opção atual por produto: mesmo link ou mesmo nome + loja.
-          Consultas anteriores ficam na aba Histórico. Avaliações e frete
-          desconhecidos permanecem sem informação.
+          Uma opção atual por produto e condição de pagamento. Pix, cartão,
+          parcelas e programas podem coexistir. Consultas anteriores ficam na
+          aba Histórico. Avaliações e frete desconhecidos permanecem sem
+          informação.
         </div>
       )}
-      {mode === "live" && (
+      {["live", "research"].includes(mode) && (
         <div className="qc-live-area">
+          {mode === "research" && (
+            <p className="qc-muted">
+              A IA pesquisa produtos e regras de parceiros na web. Confira os
+              regulamentos; cartão, assinatura e valor dos seus pontos precisam
+              da sua confirmação. A função requer conexão OpenAI.
+            </p>
+          )}
           <form className="qc-product-query" onSubmit={search}>
             <label className="qc-field">
               <span>Qual produto você está procurando?</span>
@@ -179,7 +221,11 @@ export default function OffersPanel({
                 loading || query.trim().length < 3 || isInlinePreview || !cloud
               }
             >
-              {loading ? "Consultando..." : "Buscar ofertas"}
+              {loading
+                ? "Consultando..."
+                : mode === "research"
+                  ? "Pesquisar com IA"
+                  : "Buscar ofertas"}
             </button>
           </form>
           {(isInlinePreview || !cloud) && (
@@ -261,7 +307,10 @@ export default function OffersPanel({
             value={filters.sort}
             onChange={(e) => change("sort", e.target.value)}
           >
-            <option value="price">Menor total com frete informado</option>
+            <option value="price">Menor desembolso total informado</option>
+            <option value="effective">
+              Menor custo com pontos confirmados e valorados
+            </option>
             <option value="expensive">Maior preço do produto</option>
             <option value="rating">Melhor avaliação</option>
             <option value="reviews">Mais avaliações</option>
@@ -284,6 +333,11 @@ export default function OffersPanel({
           Total dentro do previsto
         </label>
       </div>
+      {copyNotice && (
+        <p role="status" className="qc-muted">
+          {copyNotice}
+        </p>
+      )}
       <div className="qc-offer-results">
         <span aria-live="polite">
           {offers.length} de {base.length} opções
@@ -316,10 +370,10 @@ export default function OffersPanel({
               <div className="qc-offer-title">
                 <strong>{o.store}</strong>
                 <small>
-                  {o.source === "demo"
-                    ? "EXEMPLO"
-                    : o.source === "live"
-                      ? "CONSULTADO"
+                  {o.source === "live"
+                    ? "CONSULTADO"
+                    : o.source === "manual"
+                      ? "CADASTRADO"
                       : "IMPORTADO"}
                   {o.id === cheapest ? " · MENOR TOTAL INFORMADO" : ""}
                 </small>
@@ -339,7 +393,7 @@ export default function OffersPanel({
                       / 5 ·{" "}
                       {o.reviewCount?.toLocaleString("pt-BR") ??
                         "Sem total de"}{" "}
-                      avaliações{o.source === "demo" ? " fictícias" : ""}
+                      avaliações
                     </span>
                   </>
                 ) : (
@@ -347,6 +401,11 @@ export default function OffersPanel({
                 )}
               </div>
               <div className="qc-offer-price">
+                <span>
+                  {totalPrice(o) !== null
+                    ? "Desembolso total por unidade"
+                    : "Preço unitário; total ainda incompleto"}
+                </span>
                 <strong>{money(totalPrice(o) ?? o.price)}</strong>
                 <span>
                   {o.shipping === 0
@@ -356,6 +415,16 @@ export default function OffersPanel({
                       : "Preço do produto · frete a confirmar"}
                 </span>
               </div>
+              <PaymentDetails offer={o} />
+              <button className="qc-text-button" onClick={() => setEditing(o)}>
+                Pagamento e pontos
+              </button>
+              <button
+                className="qc-text-button"
+                onClick={() => setEditing({ new: true, seed: o })}
+              >
+                Cadastrar outra condição
+              </button>
               <div className="qc-offer-provenance">
                 <span>
                   Consulta:{" "}
@@ -393,14 +462,14 @@ export default function OffersPanel({
           <strong>
             {base.length
               ? "Nenhuma opção com esses filtros"
-              : mode === "live"
+              : ["live", "research"].includes(mode)
                 ? "Sua busca começa aqui"
                 : "Importe suas primeiras opções"}
           </strong>
           <p>
             {base.length
               ? "Tente ampliar a faixa de preço ou reduzir a nota mínima."
-              : mode === "live"
+              : ["live", "research"].includes(mode)
                 ? "Informe marca, modelo e características para encontrar opções mais próximas do que você precisa."
                 : "Use o botão Importar opções para este item. O template aceita nome, preço, link, data, avaliações e imagem_url."}
           </p>
@@ -415,9 +484,11 @@ export default function OffersPanel({
         Pesquisar este item na web ↗
       </a>
       <p className="qc-muted">
-        Filtros de preço usam o valor do produto. O total inclui frete quando
-        informado. Notas são agregadas; os textos individuais dos reviews não
-        estão nesta v1.
+        Filtros de preço usam o valor do produto. O desembolso inclui frete,
+        taxas e custo adicional de clube quando informados. O custo com pontos
+        só é ordenado quando as regras e a avaliação pessoal estão completas.
+        Notas são agregadas; os textos individuais dos reviews não estão nesta
+        v1.
       </p>
       <button className="qc-text-button" onClick={onImport}>
         ↥ Importar ofertas e histórico

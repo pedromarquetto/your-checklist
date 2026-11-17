@@ -26,7 +26,7 @@ Variáveis obrigatórias, sempre no servidor:
 | `BETTER_AUTH_SECRET` | Pelo menos 32 caracteres aleatórios |
 | `BETTER_AUTH_URL` | Origem exata do aplicativo, por exemplo `https://your-checklist.vercel.app` |
 
-Gere o segredo localmente e adicione-o como variável sensível na Vercel. Nunca o coloque no GitHub. Configure Production e Development; para Preview, use banco próprio e URL estável da branch de teste. Esta configuração exige uma origem explícita; não copie a URL de produção para uma prévia diferente.
+Gere o segredo localmente e adicione-o como variável sensível na Vercel. Nunca o coloque no GitHub. Neste projeto, configure e publique somente em Production, no endereço https://your-checklist.vercel.app. Os testes locais usam banco descartável; não crie outra aplicação ou ambiente hospedado para este fluxo.
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
@@ -55,6 +55,10 @@ O assistente usa o contexto salvo do projeto, limitado aos primeiros 200 itens e
 Defina `SERPAPI_API_KEY` e `SHOPPING_SEARCH_ENABLED=true`. Limite padrão: 20 consultas por conta/dia; ajuste `SHOPPING_DAILY_LIMIT` se necessário. As cotas diárias usam a data do PostgreSQL, normalmente UTC.
 
 As consultas usam Google Shopping via SerpApi. Cada execução salva até 50 resultados como snapshots no banco. Preços, notas, reviews e frete desconhecidos permanecem desconhecidos; o app não inventa histórico anterior à primeira consulta. O preço final e a disponibilidade devem ser conferidos na loja. Não há coleta agendada ou monitoramento automático nesta V1.
+
+### Pesquisa de preços e pontos por IA
+
+A rota `/api/shopping/research` usa OpenAI Responses com `web_search`, separada do assistente geral. Configure `OPENAI_API_KEY`; opcionalmente `OPENAI_RESEARCH_MODEL` (padrão `gpt-4.1-mini`) e `RESEARCH_DAILY_LIMIT` (padrão 5). O modelo precisa suportar a ferramenta web e a conta precisa ter acesso/créditos. Somente produtos com URLs recuperadas entram nas opções; parcerias sem fonte recuperada ficam pendentes. A pesquisa não define cartão, clube ou avaliação pessoal dos pontos. O AI Gateway sozinho não habilita esta rota. Confira [pagamentos e o CSV](PAGAMENTOS.md).
 
 ## 5. Imagens e dados existentes
 
@@ -102,4 +106,5 @@ O teste sobe PostgreSQL WASM em uma porta TCP temporária e o servidor Next.js d
 
 Para executar uma regressão isolada depois do build, use `BROWSER_REGRESSION=edit-subitem`, `BROWSER_REGRESSION=focus` ou `BROWSER_REGRESSION=backup` antes de `npm run test:browser`. Sem essa variável, o fluxo completo e todas as regressões são executados.
 
-A rodada de 02/11/2026 inclui 46 testes automatizados, build de produção, prévia estática e os fluxos completos no Chromium. OpenAI/SerpApi usam respostas controladas nos testes de integração; esses testes não comprovam acesso a provedores reais. O endereço oficial para validação publicada é `https://your-checklist.vercel.app/`.
+A suíte cobre ainda cálculos e CSV de pagamentos/pontos, fontes da pesquisa web, checklist simples e os fluxos completos no Chromium. OpenAI/SerpApi usam respostas controladas nos testes de integração; esses testes não comprovam acesso a provedores reais. O endereço oficial para validação publicada é `https://your-checklist.vercel.app/`.
+

@@ -23,6 +23,8 @@ import {
   prepareOffers,
   csvString,
 } from "../lib/core.mjs";
+import ProjectTypeFields from "./project-type-fields.jsx";
+import { evaluatePayment } from "../lib/payments.mjs";
 import { summarizeOfferImport } from "../lib/offers.mjs";
 import OffersPanel from "./offers-panel.jsx";
 import OfferHistory from "./offer-history.jsx";
@@ -58,8 +60,10 @@ const statusClass = (status) =>
     Pesquisando: "research",
     Comprado: "bought",
     Recebido: "delivered",
+    Concluído: "completed",
   })[status];
-const isBought = (item) => ["Comprado", "Recebido"].includes(item.status);
+const isBought = (item) =>
+  ["Comprado", "Recebido", "Concluído"].includes(item.status);
 const download = (name, content, type = "text/csv;charset=utf-8") => {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement("a");
@@ -147,7 +151,7 @@ export default function ChecklistApp({
     [modal, setModal] = useState(null),
     [selectedId, setSelectedId] = useState(initialItemId),
     [detailTab, setDetailTab] = useState(initialDetailTab),
-    [expanded, setExpanded] = useState(new Set(["cabinet"])),
+    [expanded, setExpanded] = useState(new Set()),
     [toast, setToast] = useState(""),
     [fileRows, setFileRows] = useState([]),
     [fileName, setFileName] = useState(""),
@@ -257,6 +261,14 @@ export default function ChecklistApp({
   }, [modal, selectedId]);
   const project = data.projects.find((p) => p.id === projectId) ||
       data.projects[0] || { id: "__empty", name: "", budget: 0, rooms: [] },
+    simple = project.mode === "checklist",
+    statuses = STATUSES.filter((s) =>
+      simple
+        ? !["Comprado", "Recebido"].includes(s) ||
+          (data.items[project.id] || []).some((i) => i.status === s)
+        : s !== "Concluído" ||
+          (data.items[project.id] || []).some((i) => i.status === s),
+    ),
     items = data.items[project.id] || [],
     selected = items.find((i) => i.id === selectedId),
     stats = totals(items),
@@ -323,11 +335,19 @@ export default function ChecklistApp({
   };
   const newItem = (parentId = null) => setModal({ type: "item", parentId });
   const purchase = (item, after = "Comprado") => {
+    if (simple) {
+      patch(item.id, { status: "Concluído" });
+      return;
+    }
     setSelectedId(null);
     setModal({ type: "purchase", id: item.id, after });
   };
   const move = (item, status) => {
     if (items.some((c) => c.parentId === item.id)) return;
+    if (simple) {
+      patch(item.id, { status });
+      return;
+    }
     if (["Comprado", "Recebido"].includes(status) && !item.purchaseDate)
       purchase(item, status);
     else if (!["Comprado", "Recebido"].includes(status) && isBought(item)) {
@@ -336,7 +356,11 @@ export default function ChecklistApp({
     } else patch(item.id, { status });
   };
   const toggle = (item) =>
-    isBought(item) ? move(item, "Planejado") : purchase(item);
+    isBought(item)
+      ? move(item, "Planejado")
+      : simple
+        ? move(item, "Concluído")
+        : purchase(item);
   const openImport = (options = {}) => {
     const { kind = "items", itemId = null } = options;
     setSelectedId(null);
@@ -361,7 +385,7 @@ export default function ChecklistApp({
     if (!rows.length)
       throw new Error("A planilha está vazia ou sem cabeçalhos.");
     if (rows.length > 2000)
-      throw new Error("A prévia aceita até 2.000 linhas por importação.");
+      throw new Error("Importe até 2.000 linhas por vez.");
     const cols = Object.keys(rows[0]);
     const map = importKind === "offers" ? mapOfferColumns(cols) : {};
     if (importKind === "items")
@@ -402,57 +426,6 @@ export default function ChecklistApp({
       setImportError(error.message || "Não foi possível ler o CSV.");
     }
   }
-  function exampleCSV() {
-    const sample =
-      importKind === "items"
-        ? csvString(
-            [
-              {
-                id: "cafe-grupo",
-                ambiente: "Cozinha",
-                categoria: "Cantinho do café",
-                item: "Kit café da manhã",
-                quantidade: 1,
-                valor_previsto_unitario: 0,
-                status: "Planejado",
-              },
-              {
-                id: "cafe-maquina",
-                item_pai: "cafe-grupo",
-                ambiente: "Cozinha",
-                categoria: "Cantinho do café",
-                item: "Cafeteira elétrica",
-                quantidade: 1,
-                valor_previsto_unitario: 279.9,
-                status: "Planejado",
-              },
-              {
-                id: "cafe-xicaras",
-                item_pai: "cafe-grupo",
-                ambiente: "Cozinha",
-                categoria: "Cantinho do café",
-                item: "Xícaras de cerâmica",
-                quantidade: 4,
-                valor_previsto_unitario: 24.9,
-                status: "Planejado",
-              },
-            ],
-            [
-              "id",
-              "item_pai",
-              "ambiente",
-              "categoria",
-              "item",
-              "quantidade",
-              "valor_previsto_unitario",
-              "status",
-            ],
-          )
-        : offerExampleCSV();
-    setImportSource("paste");
-    setCsvDraft(sample);
-    reviewCSV(sample);
-  }
   async function readFile(file) {
     if (!file) return;
     setImportError("");
@@ -486,7 +459,7 @@ export default function ChecklistApp({
   }
   const importResult = fileRows.length
     ? importKind === "items"
-      ? prepareImport(fileRows, mapping, items)
+      ? prepareImport(fileRows, mapping, items, { simple })
       : prepareOffers(fileRows, items, {
           mapping,
           itemId: importItemId,
@@ -554,77 +527,9 @@ export default function ChecklistApp({
       XLSX.writeFile(book, "template-opcoes.xlsx");
     } else download("template-opcoes.csv", csvString(rows, OFFER_FIELDS));
   }
-  function offerExampleCSV() {
-    const i = importItem || leafItems(items)[0];
-    if (!i) return csvString([], OFFER_FIELDS);
-    const day = today();
-    const yesterday = new Date(
-      new Date(day + "T12:00:00Z").getTime() - 86400000,
-    )
-      .toISOString()
-      .slice(0, 10);
-    const common = {
-      item_id: i.id,
-      item: i.name,
-      ambiente: i.room,
-      categoria: i.category,
-      moeda: "BRL",
-      fonte: "Exemplo fictício",
-      observacoes: "Dados inventados somente para testar a importação.",
-    };
-    const rows = [
-      {
-        ...common,
-        nome: "Modelo A (EXEMPLO)",
-        loja: "Loja fictícia A",
-        preco: 3890,
-        frete: 99.9,
-        data_consulta: yesterday,
-        link: "https://example.com/produto-a",
-        nota: 4.6,
-        avaliacoes: 200,
-      },
-      {
-        ...common,
-        nome: "Modelo A (EXEMPLO)",
-        loja: "Loja fictícia A",
-        preco: 3590,
-        frete: 99.9,
-        data_consulta: day,
-        link: "https://example.com/produto-a",
-        nota: 4.6,
-        avaliacoes: 210,
-      },
-      {
-        ...common,
-        nome: "Modelo B (EXEMPLO)",
-        loja: "Loja fictícia B",
-        preco: 3780,
-        frete: 0,
-        data_consulta: day,
-        link: "https://example.com/produto-b",
-        nota: 4.8,
-        avaliacoes: 420,
-      },
-    ];
-    return csvString(rows, OFFER_FIELDS);
-  }
   function templateDownload(format = "csv") {
     const cols = data.templateFields || FIELDS.map((f) => f[0]);
-    const rows = [
-      {
-        id: "cozinha-001",
-        ambiente: "Cozinha",
-        categoria: "Eletrodomésticos",
-        item: "Geladeira",
-        quantidade: 1,
-        valor_previsto_unitario: 4200,
-        status: "Planejado",
-        prioridade: "Alta",
-        parcelas: 1,
-        observacoes: "220 V; conferir medidas",
-      },
-    ];
+    const rows = [];
     if (format === "xlsx") {
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(
@@ -779,7 +684,7 @@ export default function ChecklistApp({
               <input
                 className="qc-check"
                 type="checkbox"
-                aria-label={`Registrar compra de ${item.name}`}
+                aria-label={`${simple ? "Concluir" : "Registrar compra de"} ${item.name}`}
                 checked={isBought(item)}
                 onChange={() => toggle(item)}
               />
@@ -795,7 +700,9 @@ export default function ChecklistApp({
                   : item.priority === "Alta"
                     ? "Prioridade alta"
                     : isBought(item)
-                      ? `${item.paymentMethod}${item.installments > 1 ? " · " + item.installments + "x" : ""}`
+                      ? simple
+                        ? "Concluído"
+                        : `${item.paymentMethod}${item.installments > 1 ? " · " + item.installments + "x" : ""}`
                       : item.notes
                         ? "Ver especificações"
                         : item.room}
@@ -832,7 +739,7 @@ export default function ChecklistApp({
           >
             ↗
           </button>
-          {!isParent && (
+          {!simple && !isParent && (
             <button
               className="qc-find-options"
               aria-label={`Buscar opções para ${item.name}`}
@@ -897,8 +804,9 @@ export default function ChecklistApp({
                   {
                     id,
                     name: String(fields.get("name")).trim(),
-                    description: "Um item de cada vez.",
+                    description: "",
                     budget: Number(fields.get("budget")),
+                    mode: fields.get("mode"),
                     icon: "◇",
                     color: "sage",
                     rooms: [],
@@ -919,18 +827,7 @@ export default function ChecklistApp({
                 placeholder="Ex.: Meu apartamento"
               />
             </label>
-            <label className="qc-field">
-              <span>Orçamento (R$)</span>
-              <input
-                name="budget"
-                type="number"
-                min="0"
-                max="10000000000"
-                step="0.01"
-                defaultValue="5000"
-                required
-              />
-            </label>
+            <ProjectTypeFields />
             <button className="qc-button qc-primary">Criar checklist</button>
           </form>
         </section>
@@ -938,7 +835,11 @@ export default function ChecklistApp({
     );
   return (
     <div
-      className={"qc-app " + (selected ? "qc-detail-open" : "")}
+      className={
+        "qc-app " +
+        (simple ? "qc-simple " : "") +
+        (selected ? "qc-detail-open" : "")
+      }
       id="qc-product"
       ref={rootRef}
       style={
@@ -960,7 +861,7 @@ export default function ChecklistApp({
           </span>
         </a>
         <div className="qc-workspace">
-          <span className="qc-avatar">P</span>
+          <span className="qc-avatar">✓</span>
           <span>
             Meu espaço pessoal<small>Organize o que vem a seguir</small>
           </span>
@@ -1031,9 +932,10 @@ export default function ChecklistApp({
             <span>▦</span>Templates de importação
           </button>
           <div className="qc-user">
-            <span className="qc-avatar mini">P</span>
+            <span className="qc-avatar mini">✓</span>
             <span>
-              Meu planejamento<small>Prévia pessoal</small>
+              Meu planejamento
+              <small>{cloud ? "Conta conectada" : "Neste navegador"}</small>
             </span>
             <span>⌄</span>
           </div>
@@ -1159,17 +1061,19 @@ export default function ChecklistApp({
                 ["kanban", "▥", "Kanban"],
                 ["budget", "◴", "Orçamento"],
                 ["assistant", "✧", "IA"],
-              ].map(([id, icon, label]) => (
-                <button
-                  key={id}
-                  className={view === id ? "active" : ""}
-                  aria-pressed={view === id}
-                  onClick={() => setView(id)}
-                >
-                  <span>{icon}</span>
-                  {label}
-                </button>
-              ))}
+              ]
+                .filter(([id]) => !simple || id !== "budget")
+                .map(([id, icon, label]) => (
+                  <button
+                    key={id}
+                    className={view === id ? "active" : ""}
+                    aria-pressed={view === id}
+                    onClick={() => setView(id)}
+                  >
+                    <span>{icon}</span>
+                    {label}
+                  </button>
+                ))}
             </div>
             <button className="qc-export" onClick={exportItems}>
               ↧ <span>Exportar</span>
@@ -1200,7 +1104,7 @@ export default function ChecklistApp({
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="Todos">Todos os status</option>
-                {STATUSES.map((s) => (
+                {statuses.map((s) => (
                   <option key={s}>{s}</option>
                 ))}
               </select>
@@ -1210,7 +1114,7 @@ export default function ChecklistApp({
                 onChange={(e) => setSort(e.target.value)}
               >
                 <option value="category">Por categoria</option>
-                <option value="price">Menor valor previsto</option>
+                {!simple && <option value="price">Menor valor previsto</option>}
                 <option value="priority">Maior prioridade</option>
               </select>
             </div>
@@ -1294,7 +1198,7 @@ export default function ChecklistApp({
           )}
           {view === "kanban" && (
             <section className="qc-kanban" aria-label="Kanban de compras">
-              {STATUSES.map((status) => (
+              {statuses.map((status) => (
                 <div
                   key={status}
                   className={
@@ -1353,6 +1257,7 @@ export default function ChecklistApp({
                         <p>{i.category}</p>
                         <button
                           className="qc-kanban-offers"
+                          hidden={simple}
                           onClick={() => openItem(i.id, "offers")}
                         >
                           ✧ Buscar opções
@@ -1370,7 +1275,7 @@ export default function ChecklistApp({
                           value={i.status}
                           onChange={(e) => move(i, e.target.value)}
                         >
-                          {STATUSES.map((s) => (
+                          {statuses.map((s) => (
                             <option key={s}>{s}</option>
                           ))}
                         </select>
@@ -1452,10 +1357,11 @@ export default function ChecklistApp({
             <AssistantPanel
               key={project.id}
               projectId={project.id}
+              simple={simple}
               cloud={cloud}
             />
           )}
-          {view === "checklist" && (
+          {!simple && view === "checklist" && (
             <div className="qc-ai-strip">
               <span className="qc-ai-icon">✧</span>
               <div>
@@ -1522,15 +1428,17 @@ export default function ChecklistApp({
                 ["details", "Detalhes"],
                 ["offers", "Buscar opções"],
                 ["history", "Histórico"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  className={detailTab === key ? "active" : ""}
-                  onClick={() => setDetailTab(key)}
-                >
-                  {label}
-                </button>
-              ))}
+              ]
+                .filter(([key]) => !simple || key === "details")
+                .map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={detailTab === key ? "active" : ""}
+                    onClick={() => setDetailTab(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
             </div>
             {detailTab === "details" && (
               <div className="qc-detail-content">
@@ -1545,13 +1453,13 @@ export default function ChecklistApp({
                   </div>
                 </div>
                 <label className="qc-field">
-                  <span>Status de compra</span>
+                  <span>{simple ? "Status do item" : "Status de compra"}</span>
                   <select
                     value={selected.status}
                     disabled={items.some((i) => i.parentId === selected.id)}
                     onChange={(e) => move(selected, e.target.value)}
                   >
-                    {STATUSES.map((s) => (
+                    {statuses.map((s) => (
                       <option key={s}>{s}</option>
                     ))}
                   </select>
@@ -1606,7 +1514,7 @@ export default function ChecklistApp({
                         <input
                           type="checkbox"
                           checked={isBought(i)}
-                          aria-label={`Comprar ${i.name}`}
+                          aria-label={`${simple ? "Concluir" : "Comprar"} ${i.name}`}
                           onChange={() => toggle(i)}
                         />
                         <button
@@ -1660,7 +1568,7 @@ export default function ChecklistApp({
                         className="qc-button qc-primary"
                         onClick={() => purchase(selected)}
                       >
-                        ✓ Registrar compra
+                        {simple ? "✓ Concluir item" : "✓ Registrar compra"}
                       </button>
                     )}
                 </div>
@@ -1672,6 +1580,14 @@ export default function ChecklistApp({
                 item={selected}
                 cloud={cloud}
                 onResults={(offers) => setData((d) => addLiveOffers(d, offers))}
+                onSaveOffer={(offer) =>
+                  setData((d) => ({
+                    ...d,
+                    offers: d.offers.some((o) => o.id === offer.id)
+                      ? d.offers.map((o) => (o.id === offer.id ? offer : o))
+                      : [...d.offers, offer],
+                  }))
+                }
                 importedOffers={data.offers.filter(
                   (o) => o.itemId === selected.id,
                 )}
@@ -1772,6 +1688,16 @@ export default function ChecklistApp({
                 rooms={rooms}
                 categories={galleryCategories}
                 onAction={applyStructure}
+                onModeChange={(mode) => {
+                  setData((d) => ({
+                    ...d,
+                    projects: d.projects.map((p) =>
+                      p.id === project.id ? { ...p, mode } : p,
+                    ),
+                  }));
+                  setView("checklist");
+                  setStatusFilter("Todos");
+                }}
               />
             )}
             {modal.type === "gallery" && (
@@ -1821,7 +1747,7 @@ export default function ChecklistApp({
                           defaultValue={
                             parent?.room ||
                             i.room ||
-                            (room !== "Todos" ? room : "")
+                            (room !== "Todos" ? room : simple ? "Geral" : "")
                           }
                           readOnly={!!parent}
                           placeholder="Ex.: Cozinha"
@@ -1842,7 +1768,7 @@ export default function ChecklistApp({
                             parent?.category ||
                             i.category ||
                             modal.category ||
-                            ""
+                            (simple ? "Tarefas" : "")
                           }
                           readOnly={!!parent}
                           placeholder="Ex.: Eletrodomésticos"
@@ -1864,16 +1790,17 @@ export default function ChecklistApp({
                           defaultValue={i.qty || 1}
                         />
                       </Field>
-                      <Field label="Valor previsto unitário (R$)">
-                        <input
-                          name="unitBudget"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          required
-                          defaultValue={i.unitBudget || 0}
-                        />
-                      </Field>
+                      <div className="qc-financial-field">
+                        <Field label="Valor previsto unitário (R$)">
+                          <input
+                            name="unitBudget"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            defaultValue={i.unitBudget || ""}
+                          />
+                        </Field>
+                      </div>
                       <Field label="Prioridade">
                         <select
                           name="priority"
@@ -1949,8 +1876,9 @@ export default function ChecklistApp({
                           required
                           defaultValue={
                             modal.offer
-                              ? modal.offer.price * i.qty +
-                                (modal.offer.shipping ?? 0)
+                              ? (evaluatePayment(modal.offer, {
+                                  quantity: i.qty,
+                                }).checkout ?? "")
                               : i.paidTotal || i.qty * i.unitBudget
                           }
                         />
@@ -1967,7 +1895,11 @@ export default function ChecklistApp({
                       <Field label="Forma de pagamento *">
                         <select
                           name="method"
-                          defaultValue={i.paymentMethod || "Pix"}
+                          defaultValue={
+                            modal.offer?.payment?.method ||
+                            i.paymentMethod ||
+                            "Pix"
+                          }
                         >
                           {METHODS.map((m) => (
                             <option key={m}>{m}</option>
@@ -1981,7 +1913,11 @@ export default function ChecklistApp({
                           min="1"
                           max="120"
                           required
-                          defaultValue={i.installments || 1}
+                          defaultValue={
+                            modal.offer?.payment?.installments ||
+                            i.installments ||
+                            1
+                          }
                         />
                       </Field>
                       <Field label="Loja">
@@ -2012,12 +1948,6 @@ export default function ChecklistApp({
                       <p className="qc-demo-note">
                         O frete não foi informado pela fonte. Inclua o valor
                         final no total pago.
-                      </p>
-                    )}
-                    {modal.offer?.source === "demo" && (
-                      <p className="qc-demo-note">
-                        Oferta fictícia selecionada. Confirme o valor antes de
-                        salvar.
                       </p>
                     )}
                     <div className="qc-form-footer">
@@ -2056,8 +1986,9 @@ export default function ChecklistApp({
                     <small>
                       Campos essenciais: nome, preço, link e data da consulta.
                       Frete vazio = desconhecido; 0 = grátis. Nota, avaliações e
-                      imagem_url são opcionais. Use o link HTTPS direto da foto
-                      do produto.
+                      imagem_url são opcionais. Pagamento, cartão, parceria,
+                      fonte e validade também podem ser importados; confira o
+                      pedido de pesquisa no item.
                     </small>
                   </div>
                 )}
@@ -2090,9 +2021,6 @@ export default function ChecklistApp({
                       Colar CSV
                     </button>
                   </div>
-                  <button className="qc-text-button" onClick={exampleCSV}>
-                    Experimentar com exemplo
-                  </button>
                 </div>
                 {importSource === "file" ? (
                   <div
@@ -2469,11 +2397,9 @@ export default function ChecklistApp({
                       {
                         id,
                         name: String(f.get("name")).trim(),
-                        description: String(
-                          f.get("description") ||
-                            "Seu próximo começo, um item de cada vez.",
-                        ),
+                        description: String(f.get("description") || ""),
                         budget: Number(f.get("budget")),
+                        mode: f.get("mode"),
                         icon: "◇",
                         color: "sage",
                         rooms: [],
@@ -2506,16 +2432,7 @@ export default function ChecklistApp({
                       placeholder="Um novo espaço. Mil possibilidades."
                     />
                   </Field>
-                  <Field label="Orçamento total (R$) *" wide>
-                    <input
-                      name="budget"
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
-                      defaultValue="5000"
-                    />
-                  </Field>
+                  <ProjectTypeFields />
                 </div>
                 <div className="qc-form-footer">
                   <button className="qc-button qc-primary" type="submit">

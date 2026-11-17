@@ -40,6 +40,12 @@ console.log(
     ? "configurada"
     : "aguardando credencial/ativação",
 );
+console.log(
+  "Pesquisa web de preços e pontos:",
+  process.env.OPENAI_API_KEY
+    ? "credencial presente"
+    : "aguardando credencial OpenAI",
+);
 if (valid) {
   try {
     const { getPool } = await import("../lib/server/db.mjs"),

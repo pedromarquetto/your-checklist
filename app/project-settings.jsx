@@ -47,6 +47,7 @@ export default function ProjectSettings({
   rooms,
   categories,
   onAction,
+  onModeChange,
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -72,6 +73,20 @@ export default function ProjectSettings({
           {error}
         </p>
       )}
+      <label className="qc-field">
+        <span>Tipo de checklist</span>
+        <select
+          aria-label="Tipo de checklist"
+          value={project.mode || "shopping"}
+          onChange={(e) => onModeChange(e.target.value)}
+        >
+          <option value="shopping">Compras: preços, pagamento e pontos</option>
+          <option value="checklist">
+            Checklist simples: sem valores obrigatórios
+          </option>
+        </select>
+      </label>
+      <p>Mudar o tipo preserva os itens e os registros existentes.</p>
       <h3>Projeto</h3>
       <RenameRow
         key={project.name}
