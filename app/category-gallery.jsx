@@ -543,6 +543,7 @@ export default function CategoryGallery({
                   <input
                     key={`${photo.id}-${photo.caption}`}
                     aria-label={`Legenda da referência ${position + 1}`}
+                    disabled={busy || !ready || !!storageError}
                     defaultValue={photo.caption}
                     placeholder="O que você quer aproveitar desta imagem?"
                     maxLength={240}
