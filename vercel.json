@@ -1,0 +1,3 @@
+{
+  "buildCommand": "if [ \"$VERCEL_ENV\" = production ] && [ -n \"$DATABASE_URL\" ]; then npm run db:migrate -- --workspace-only && npm run build; else npm run build; fi"
+}

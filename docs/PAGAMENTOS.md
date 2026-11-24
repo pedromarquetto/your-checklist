@@ -23,7 +23,7 @@ Sem frete conhecido, não há total comparável. Sem fonte, data, elegibilidade,
 
 **Busca ao vivo** usa SerpApi para preços; não verifica parcerias. **Pesquisar preços e pontos com IA** usa OpenAI com a ferramenta web_search. Ela consulta produtos e regras de parceiros, descarta produtos cujos links não foram recuperados pela ferramenta e mantém taxas sem fonte pendentes. Não presume cartão, assinatura, cotação ou valor dos seus pontos. A IA não acessa suas contas nem realiza compras. As regras e os dados extraídos ainda precisam ser conferidos na fonte, inclusive categoria, vendedor, cupom, canal de entrada, prazo e crédito dos pontos.
 
-O assistente geral analisa as ofertas atuais salvas e seus cálculos. Não pesquisa a web nesse chat. Sem credencial, importação, cadastro e cálculos seguem funcionando. Pesquisa IA: OPENAI_API_KEY; modelo OPENAI_RESEARCH_MODEL (padrão gpt-4.1-mini), limite RESEARCH_DAILY_LIMIT (padrão 5 por conta/dia). AI Gateway sozinho habilita o assistente, mas não esta pesquisa web. Nenhum provedor é simulado na aplicação.
+O assistente geral analisa as ofertas atuais salvas e seus cálculos. A pesquisa web usa `OPENAI_API_KEY`, `OPENAI_RESEARCH_MODEL` (padrão `gpt-6-luna`), `RESEARCH_DAILY_LIMIT` (padrão 5 por conta/dia) e `RESEARCH_WEB_CALL_LIMIT` (padrão 1 por pesquisa). O custo estimado da consulta aparece nas ofertas e no menu **Uso da IA**. Sem credencial, importação, cadastro e cálculos seguem funcionando. O AI Gateway sozinho habilita o assistente.
 
 ## CSV de ofertas
 

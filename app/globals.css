@@ -47,3 +47,22 @@ button,input,textarea,select{font:inherit}button{cursor:pointer}button:disabled{
 @media(max-width:600px){.qc-simple .qc-table-head,.qc-simple .qc-item-row{grid-template-columns:minmax(0,1fr) 45px 80px 22px}.qc-simple .qc-kanban{grid-template-columns:1fr}.qc-offer-editor .qc-form-grid{grid-template-columns:1fr}}
 
 .qc-simple .qc-kanban-offers{display:none}
+
+.qc-usage-dialog{box-sizing:border-box;width:min(900px,calc(100% - 28px));max-height:calc(100dvh - 28px);border:1px solid var(--qc-line);border-radius:16px;padding:clamp(16px,3vw,28px);color:var(--qc-text);background:var(--qc-paper)}
+.qc-usage-dialog::backdrop{background:#1e332a88}
+.qc-usage-dialog header,.qc-usage-dialog footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.qc-usage-dialog h2{margin:0;font-size:24px}
+.qc-usage-dialog p{font-size:14px;line-height:1.5}
+.qc-usage-dialog button{border:1px solid var(--qc-line);border-radius:7px;padding:7px 12px;background:var(--qc-paper);color:var(--qc-green)}
+.qc-usage-dialog footer>div{display:flex;gap:8px}
+.qc-usage-totals{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.qc-usage-totals>div{flex:1;min-width:145px;padding:12px;border-radius:8px;background:var(--qc-soft)}
+.qc-usage-totals dt{font-size:13px}
+.qc-usage-totals dd{margin:4px 0 0;font-weight:650;font-variant-numeric:tabular-nums}
+.qc-usage-table{overflow-x:auto;margin:16px 0}
+.qc-usage-table table{border-collapse:collapse;width:100%;text-align:left;font-size:13px}
+.qc-usage-table th,.qc-usage-table td{padding:10px 8px;vertical-align:top;border-bottom:1px solid var(--qc-line)}
+.qc-usage-table tbody th{min-width:145px;max-width:245px;overflow-wrap:anywhere}
+.qc-usage-table tbody td{font-variant-numeric:tabular-nums}
+.qc-usage-table tbody td:nth-child(2){white-space:nowrap}
+.qc-usage-table small{display:block;color:var(--qc-muted);font-weight:400;margin-top:4px}

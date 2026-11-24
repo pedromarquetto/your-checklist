@@ -132,6 +132,13 @@ try {
     await page
       .getByRole("heading", { name: "Qual é o seu próximo plano?" })
       .waitFor();
+    await page.getByRole("button", { name: "Uso da IA" }).click();
+    const usage = page.getByRole("dialog", { name: "Uso da IA" });
+    await usage
+      .getByText("As próximas chamadas de IA vão aparecer aqui.")
+      .waitFor();
+    await usage.getByRole("button", { name: "Fechar" }).click();
+    await usage.waitFor({ state: "hidden" });
     await page.getByLabel("Nome do checklist").fill("Apartamento QA");
     await page
       .getByLabel("Orçamento total (R$; opcional)", { exact: true })
@@ -218,11 +225,9 @@ try {
         mimeType: "image/png",
         buffer: Buffer.from(png, "base64"),
       });
-    await page.getByLabel("Legenda da referência 1", { exact: true }).waitFor();
-    await page
-      .getByLabel("Legenda da referência 1", { exact: true })
-      .fill("Referência da cozinha");
-    await page.getByLabel("Categoria da galeria", { exact: true }).focus();
+    const caption = page.getByLabel("Legenda da referência 1", { exact: true });
+    await caption.fill("Referência da cozinha");
+    await caption.blur();
     await waitFor(async () => {
       const response = await page.request.get(
         base +

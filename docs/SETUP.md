@@ -35,7 +35,7 @@ npm run db:migrate
 npm run config:check
 ```
 
-`db:migrate` aplica o esquema da versão instalada de Better Auth e a migração `database/migrations/001_workspace.sql`. É repetível e verifica o checksum da migração aplicada. Não roda automaticamente durante o build. A conexão do banco precisa ter permissão para criar tabelas e índices.
+`db:migrate` aplica o esquema da versão instalada de Better Auth e as migrações de `database/migrations/`. O comando é repetível e verifica o checksum das migrações aplicadas. Depois da configuração inicial da autenticação, o build de produção na Vercel aplica as migrações do app antes da compilação. A conexão do banco precisa ter permissão para criar tabelas e índices.
 
 As contas usam e-mail/senha, sessões persistidas no banco e rate limiting durável. Há troca de senha autenticada, que encerra as outras sessões. Esta V1 não envia e-mails: verificação de endereço e recuperação de senha por e-mail precisam de uma integração de entrega futura. Use uma senha guardada no seu gerenciador de senhas.
 
@@ -58,7 +58,9 @@ As consultas usam Google Shopping via SerpApi. Cada execução salva até 50 res
 
 ### Pesquisa de preços e pontos por IA
 
-A rota `/api/shopping/research` usa OpenAI Responses com `web_search`, separada do assistente geral. Configure `OPENAI_API_KEY`; opcionalmente `OPENAI_RESEARCH_MODEL` (padrão `gpt-4.1-mini`) e `RESEARCH_DAILY_LIMIT` (padrão 5). O modelo precisa suportar a ferramenta web e a conta precisa ter acesso/créditos. Somente produtos com URLs recuperadas entram nas opções; parcerias sem fonte recuperada ficam pendentes. A pesquisa não define cartão, clube ou avaliação pessoal dos pontos. O AI Gateway sozinho não habilita esta rota. Confira [pagamentos e o CSV](PAGAMENTOS.md).
+A rota `/api/shopping/research` usa OpenAI Responses com `web_search`, separada do assistente geral. Configure `OPENAI_API_KEY`. As variáveis opcionais são `OPENAI_RESEARCH_MODEL` (padrão `gpt-6-luna`), `RESEARCH_DAILY_LIMIT` (padrão 5) e `RESEARCH_WEB_CALL_LIMIT` (padrão 1, de 1 a 5). O modelo precisa suportar a ferramenta web e a conta precisa ter acesso e créditos. Somente produtos com URLs recuperadas entram nas opções. Parcerias sem fonte recuperada ficam pendentes. A pesquisa não define cartão, clube ou avaliação pessoal dos pontos. O AI Gateway sozinho não habilita esta rota. Confira [pagamentos e o CSV](PAGAMENTOS.md).
+
+O menu **Uso da IA** mostra as chamadas registradas por conta após a atualização, com modelo, tokens, chamadas web e estimativa em USD. Para os modelos OpenAI cotados, a estimativa usa as tarifas de tokens (incluindo cache) e a tarifa da ferramenta web. Chamadas sem dados de cobrança comparáveis, como pesquisas com o modelo legado `gpt-4.1-mini` ou respostas sem dados de uso, aparecem com valor indisponível. As mensagens do assistente não são guardadas no histórico de uso.
 
 ## 5. Imagens e dados existentes
 

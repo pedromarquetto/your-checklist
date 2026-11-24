@@ -29,7 +29,7 @@ A V1 é pessoal: o mesmo usuário acessa sua conta em vários dispositivos. Conv
 
 O comparador, importador e templates não incluem ofertas ou itens fictícios. Contas novas começam vazias. Há checklist simples sem valores e modo compras com pagamento, parcelas e pontos. Consulte [o guia de pagamentos e CSV](docs/PAGAMENTOS.md). Login não exige confirmação de e-mail nesta etapa; recuperação por e-mail aguarda uma integração de entrega. Há troca de senha autenticada.
 
-Armazenamento V1: documento JSONB por usuário para projetos/itens/compras/ofertas, tabelas separadas para consultas, galerias, imagens e cotas. Toda operação é autenticada e filtrada pelo usuário da sessão. `database/schema.sql` é a proposta antiga; a migração operacional está em `database/migrations/001_workspace.sql`.
+O armazenamento V1 usa um documento JSONB por usuário para projetos, itens, compras e ofertas, além de tabelas para consultas, galerias, imagens, cotas e uso da IA. Toda operação é autenticada e filtrada pelo usuário da sessão. As migrações operacionais ficam em `database/migrations/`.
 
 Limites de proteção: 50 projetos, 5.000 itens por projeto, 20.000 snapshots no documento e até 3 MB por gravação do workspace. Referências: até 24 fotos/categoria e 100 MB/conta, com JPEG preparado em até 2048 px/1,5 MB por imagem. As referências externas dependem de seus links.
 

@@ -5,6 +5,7 @@ import OfferImage from "./offer-image.jsx";
 import PaymentDetails from "./payment-details.jsx";
 import OfferEditor from "./offer-editor.jsx";
 import { filterOffers, totalPrice, latestOffers } from "../lib/offers.mjs";
+import { formatAiCost } from "../lib/ai-cost-format.mjs";
 import {
   searchOffers,
   researchOffers,
@@ -28,6 +29,7 @@ export default function OffersPanel({
     [query, setQuery] = useState(item.name),
     [live, setLive] = useState([]),
     [observedAt, setObservedAt] = useState(""),
+    [usage, setUsage] = useState(null),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [copyNotice, setCopyNotice] = useState("");
@@ -63,6 +65,7 @@ export default function OffersPanel({
     setLoading(true);
     setLive([]);
     setObservedAt("");
+    setUsage(null);
     try {
       await cloud?.flush();
       const result = await (
@@ -71,6 +74,7 @@ export default function OffersPanel({
       if (id === requestId.current) {
         setLive(result.offers);
         setObservedAt(result.observedAt);
+        setUsage(result.usage ?? null);
         onResults(result.offers);
         if (mode === "research")
           setCopyNotice(
@@ -94,6 +98,7 @@ export default function OffersPanel({
     setMode(next);
     setLive([]);
     setObservedAt("");
+    setUsage(null);
     setCopyNotice("");
     setError("");
     setLoading(false);
@@ -245,6 +250,14 @@ export default function OffersPanel({
               Consulta realizada em{" "}
               {new Date(observedAt).toLocaleString("pt-BR")} · dados da fonte,
               sujeitos a alteração na loja.
+            </p>
+          )}
+          {usage && (
+            <p className="qc-source-time">
+              Custo estimado da pesquisa ·{" "}
+              {formatAiCost(usage.estimatedCostUsd)}
+              {" · "}
+              {usage.model}
             </p>
           )}
         </div>
