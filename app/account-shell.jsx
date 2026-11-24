@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import ChecklistApp from "./checklist-app.jsx";
 import AccountPassword from "./account-password.jsx";
+import AiUsageDialog from "./ai-usage-dialog.jsx";
 import { authClient } from "../lib/auth-client.mjs";
 import { api } from "../lib/api-client.mjs";
 import {
@@ -125,7 +126,8 @@ function CloudWorkspace({ session }) {
     }),
     [local, setLocal] = useState(null),
     [migration, setMigration] = useState(""),
-    [recovery, setRecovery] = useState(null);
+    [recovery, setRecovery] = useState(null),
+    [showAiUsage, setShowAiUsage] = useState(false);
   const backupFile = useRef(null);
   const cacheKey = `your-checklist-pending-${session.user.id}`,
     draft = useRef(null),
@@ -440,6 +442,12 @@ function CloudWorkspace({ session }) {
         <div>
           <button
             className="qc-text-button"
+            onClick={() => setShowAiUsage(true)}
+          >
+            Uso da IA
+          </button>
+          <button
+            className="qc-text-button"
             disabled={!state.data}
             onClick={() => download(draft.current)}
           >
@@ -471,6 +479,7 @@ function CloudWorkspace({ session }) {
           </button>
         </div>
       </div>
+      {showAiUsage && <AiUsageDialog onClose={() => setShowAiUsage(false)} />}
       {state.error && (
         <div className="qc-sync-alert" role="alert">
           <span>{state.error}</span>

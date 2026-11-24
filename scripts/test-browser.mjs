@@ -132,6 +132,13 @@ try {
     await page
       .getByRole("heading", { name: "Qual é o seu próximo plano?" })
       .waitFor();
+    await page.getByRole("button", { name: "Uso da IA" }).click();
+    const usage = page.getByRole("dialog", { name: "Uso da IA" });
+    await usage
+      .getByText("As próximas chamadas de IA vão aparecer aqui.")
+      .waitFor();
+    await usage.getByRole("button", { name: "Fechar" }).click();
+    await usage.waitFor({ state: "hidden" });
     await page.getByLabel("Nome do checklist").fill("Apartamento QA");
     await page
       .getByLabel("Orçamento total (R$; opcional)", { exact: true })
