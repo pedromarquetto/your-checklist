@@ -225,11 +225,9 @@ try {
         mimeType: "image/png",
         buffer: Buffer.from(png, "base64"),
       });
-    await page.getByLabel("Legenda da referência 1", { exact: true }).waitFor();
-    await page
-      .getByLabel("Legenda da referência 1", { exact: true })
-      .fill("Referência da cozinha");
-    await page.getByLabel("Categoria da galeria", { exact: true }).focus();
+    const caption = page.getByLabel("Legenda da referência 1", { exact: true });
+    await caption.fill("Referência da cozinha");
+    await caption.blur();
     await waitFor(async () => {
       const response = await page.request.get(
         base +
