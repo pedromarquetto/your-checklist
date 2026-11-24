@@ -66,3 +66,39 @@ button,input,textarea,select{font:inherit}button{cursor:pointer}button:disabled{
 .qc-usage-table tbody td{font-variant-numeric:tabular-nums}
 .qc-usage-table tbody td:nth-child(2){white-space:nowrap}
 .qc-usage-table small{display:block;color:var(--qc-muted);font-weight:400;margin-top:4px}
+
+.qc-search-feedback {
+  background: var(--qc-sand);
+  border: 1px solid var(--qc-line);
+  border-radius: 9px;
+  padding: 16px;
+  margin: 12px 0 16px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.qc-search-feedback h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.qc-search-feedback p + p {
+  margin-top: 6px;
+}
+.qc-search-feedback > h4 {
+  margin-top: 14px;
+}
+.qc-search-feedback ul {
+  margin: 0 0 14px;
+  padding-inline-start: 20px;
+}
+.qc-search-feedback li + li {
+  margin-top: 5px;
+}
+.qc-search-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.qc-shopping-empty > .qc-button {
+  margin-top: 10px;
+}
