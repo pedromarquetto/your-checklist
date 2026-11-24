@@ -12,6 +12,16 @@ import {
   isInlinePreview,
 } from "../lib/shopping-client.mjs";
 
+const defaultFilters = {
+  minPrice: "",
+  maxPrice: "",
+  minRating: 0,
+  minReviews: 0,
+  freeShipping: false,
+  withinBudget: false,
+  sort: "price",
+};
+
 export default function OffersPanel({
   item,
   importedOffers,
@@ -27,31 +37,35 @@ export default function OffersPanel({
   const [editing, setEditing] = useState(null);
   const [mode, setMode] = useState(initialMode),
     [query, setQuery] = useState(item.name),
-    [live, setLive] = useState([]),
-    [observedAt, setObservedAt] = useState(""),
-    [usage, setUsage] = useState(null),
+    [searchResult, setSearchResult] = useState(null),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [copyNotice, setCopyNotice] = useState("");
-  const [filters, setFilters] = useState({
-    minPrice: "",
-    maxPrice: "",
-    minRating: 0,
-    minReviews: 0,
-    freeShipping: false,
-    withinBudget: false,
-    sort: "price",
-  });
+  const [filters, setFilters] = useState(defaultFilters);
   const abort = useRef(null),
-    requestId = useRef(0);
+    requestId = useRef(0),
+    searchInput = useRef(null);
   useEffect(() => () => abort.current?.abort(), []);
   const change = (name, value) => setFilters((f) => ({ ...f, [name]: value }));
   const base = latestOffers(
     mode === "imported"
       ? importedOffers.filter((o) => o.source !== "demo")
-      : live.map((o) => importedOffers.find((saved) => saved.id === o.id) || o),
+      : (searchResult?.offers ?? []).map(
+          (o) => importedOffers.find((saved) => saved.id === o.id) || o,
+        ),
   );
   const offers = filterOffers(base, { ...filters, budget: item.unitBudget });
+  const {
+    observedAt,
+    usage,
+    warnings = [],
+    discardedOffers = 0,
+  } = searchResult ?? {};
+  const emptySearch = mode !== "imported" && searchResult && !base.length;
+  const filteredOut = base.length > 0 && !offers.length;
+  const filtersChanged = Object.keys(defaultFilters).some(
+    (key) => filters[key] !== defaultFilters[key],
+  );
   const cheapest = [...offers]
     .filter((o) => totalPrice(o) !== null)
     .sort((a, b) => totalPrice(a) - totalPrice(b))[0]?.id;
@@ -63,27 +77,15 @@ export default function OffersPanel({
     const id = ++requestId.current;
     setError("");
     setLoading(true);
-    setLive([]);
-    setObservedAt("");
-    setUsage(null);
+    setSearchResult(null);
     try {
       await cloud?.flush();
       const result = await (
         mode === "research" ? researchOffers : searchOffers
       )(query, item.id, controller.signal);
       if (id === requestId.current) {
-        setLive(result.offers);
-        setObservedAt(result.observedAt);
-        setUsage(result.usage ?? null);
+        setSearchResult(result);
         onResults(result.offers);
-        if (mode === "research")
-          setCopyNotice(
-            result.offers.length
-              ? "Pesquisa salva. Confira as fontes e complete as condições pessoais para comparar pontos."
-              : "Nenhuma oferta com fonte verificável foi encontrada. Tente uma busca mais específica.",
-          );
-        if (result.warnings?.length)
-          setCopyNotice((result.warnings || []).join(" "));
       }
     } catch (err) {
       if (err.name !== "AbortError" && id === requestId.current)
@@ -96,14 +98,22 @@ export default function OffersPanel({
     abort.current?.abort();
     requestId.current++;
     setMode(next);
-    setLive([]);
-    setObservedAt("");
-    setUsage(null);
+    setSearchResult(null);
     setCopyNotice("");
     setError("");
     setLoading(false);
   }
   const webUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query || item.name)}`;
+  const webSearchLink = (
+    <a
+      className={emptySearch ? "qc-button" : "qc-button qc-full"}
+      href={webUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {emptySearch ? "Abrir Google Shopping ↗" : "Pesquisar este item na web ↗"}
+    </a>
+  );
   return (
     <div className="qc-detail-content qc-shopping-panel">
       <div className="qc-shopping-heading">
@@ -214,6 +224,7 @@ export default function OffersPanel({
               <span>Qual produto você está procurando?</span>
               <input
                 aria-label="Busca de produto"
+                ref={searchInput}
                 value={query}
                 maxLength={200}
                 onChange={(e) => setQuery(e.target.value)}
@@ -241,10 +252,12 @@ export default function OffersPanel({
             </div>
           )}
           {error && (
-            <p className="qc-error" role="alert">
-              {error}
-            </p>
+            <div className="qc-error" role="alert">
+              <strong>Não foi possível concluir a pesquisa</strong>
+              <p>{error}</p>
+            </div>
           )}
+          {loading && <p role="status">Pesquisando ofertas…</p>}
           {observedAt && (
             <p className="qc-source-time">
               Consulta realizada em{" "}
@@ -258,6 +271,59 @@ export default function OffersPanel({
               {formatAiCost(usage.estimatedCostUsd)}
               {" · "}
               {usage.model}
+            </p>
+          )}
+          {emptySearch && (
+            <section className="qc-search-feedback">
+              <div role="status">
+                <h4>
+                  {discardedOffers > 0
+                    ? "As ofertas retornadas não passaram na validação"
+                    : mode === "research"
+                      ? "Nenhuma oferta verificável encontrada"
+                      : "Nenhuma oferta encontrada"}
+                </h4>
+                <p>
+                  Resultado para <strong>“{searchResult.query}”</strong>
+                </p>
+                {warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+              <h4>Como melhorar a busca</h4>
+              <ul>
+                <li>
+                  Use a marca e o código exato do modelo. Acrescente tamanho ou
+                  voltagem se precisar distinguir versões.
+                </li>
+                <li>
+                  Se a consulta ficou longa, mantenha só o nome do produto e
+                  retire a loja, o cupom e outras condições.
+                </li>
+                {mode === "research" && (
+                  <li>
+                    Busque o preço primeiro e confira o bônus no regulamento
+                    oficial do programa de pontos.
+                  </li>
+                )}
+              </ul>
+              <div className="qc-search-feedback-actions">
+                <button
+                  type="button"
+                  className="qc-button qc-primary"
+                  onClick={() => searchInput.current?.focus()}
+                >
+                  Editar busca
+                </button>
+                {webSearchLink}
+              </div>
+            </section>
+          )}
+          {mode === "research" && base.length > 0 && (
+            <p className="qc-source-time" role="status">
+              {warnings.length
+                ? warnings.join(" ")
+                : "Pesquisa salva. Confira as fontes e complete as condições pessoais para comparar pontos."}
             </p>
           )}
         </div>
@@ -346,32 +412,23 @@ export default function OffersPanel({
           Total dentro do previsto
         </label>
       </div>
-      {copyNotice && (
-        <p role="status" className="qc-muted">
-          {copyNotice}
-        </p>
+      {(base.length > 0 || filtersChanged) && (
+        <div className="qc-offer-results">
+          {base.length > 0 && (
+            <span aria-live="polite">
+              {offers.length} de {base.length} opções
+            </span>
+          )}
+          {!filteredOut && (
+            <button
+              className="qc-text-button"
+              onClick={() => setFilters(defaultFilters)}
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
       )}
-      <div className="qc-offer-results">
-        <span aria-live="polite">
-          {offers.length} de {base.length} opções
-        </span>
-        <button
-          className="qc-text-button"
-          onClick={() =>
-            setFilters({
-              minPrice: "",
-              maxPrice: "",
-              minRating: 0,
-              minReviews: 0,
-              freeShipping: false,
-              withinBudget: false,
-              sort: "price",
-            })
-          }
-        >
-          Limpar filtros
-        </button>
-      </div>
       {offers.map((o) => (
         <article
           key={o.id}
@@ -470,32 +527,28 @@ export default function OffersPanel({
           </div>
         </article>
       ))}
-      {!offers.length && (
+      {filteredOut && (
         <div className="qc-shopping-empty">
-          <strong>
-            {base.length
-              ? "Nenhuma opção com esses filtros"
-              : ["live", "research"].includes(mode)
-                ? "Sua busca começa aqui"
-                : "Importe suas primeiras opções"}
-          </strong>
+          <strong>Os filtros ocultaram as ofertas encontradas</strong>
+          <p>Limpe os filtros para ver as ofertas sem fazer outra consulta.</p>
+          <button
+            className="qc-button"
+            onClick={() => setFilters(defaultFilters)}
+          >
+            Limpar filtros
+          </button>
+        </div>
+      )}
+      {mode === "imported" && !base.length && (
+        <div className="qc-shopping-empty">
+          <strong>Nenhuma oferta salva para este item</strong>
           <p>
-            {base.length
-              ? "Tente ampliar a faixa de preço ou reduzir a nota mínima."
-              : ["live", "research"].includes(mode)
-                ? "Informe marca, modelo e características para encontrar opções mais próximas do que você precisa."
-                : "Use o botão Importar opções para este item. O template aceita nome, preço, link, data, avaliações e imagem_url."}
+            Cadastre uma opção ou importe uma planilha com nome, preço, link e
+            data da consulta.
           </p>
         </div>
       )}
-      <a
-        className="qc-button qc-full"
-        href={webUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Pesquisar este item na web ↗
-      </a>
+      {!emptySearch && webSearchLink}
       <p className="qc-muted">
         Filtros de preço usam o valor do produto. O desembolso inclui frete,
         taxas e custo adicional de clube quando informados. O custo com pontos

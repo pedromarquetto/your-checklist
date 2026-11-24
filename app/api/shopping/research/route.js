@@ -118,7 +118,7 @@ export async function POST(request) {
       });
       throw new HttpError(
         502,
-        "A pesquisa não retornou opções verificáveis agora. Tente novamente ou importe um CSV.",
+        "A busca com IA falhou. Você pode procurar em sites de lojas ou importar um CSV.",
       );
     }
     const usage = await finishAiUsage(

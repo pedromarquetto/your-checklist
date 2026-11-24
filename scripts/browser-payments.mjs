@@ -236,6 +236,72 @@ export async function runPaymentFlows(browser, base) {
       .filter({ hasText: "aguarda a chave OpenAI" })
       .waitFor();
     assert.equal((await state()).data.offers.length, 2);
+
+    const responses = [
+      { offers: [], discardedOffers: 0, warnings: [] },
+      {
+        offers: [],
+        discardedOffers: 1,
+        warnings: ["Há ofertas sem um link confirmado na busca."],
+      },
+      { offers: [data.offers[0]], discardedOffers: 0, warnings: [] },
+    ];
+    let researchRequests = 0;
+    await page.route("**/api/shopping/research", async (route) => {
+      const { query } = route.request().postDataJSON();
+      await route.fulfill({
+        json: {
+          ...responses[researchRequests++],
+          query,
+          observedAt: new Date().toISOString(),
+          usage: { estimatedCostUsd: 0.01022, model: "gpt-6-luna" },
+        },
+      });
+    });
+    const research = page.getByRole("button", {
+      name: "Pesquisar com IA",
+      exact: true,
+    });
+    await research.click();
+    await page.getByText("Nenhuma oferta verificável encontrada").waitFor();
+    await page.getByText("Como melhorar a busca").waitFor();
+    await page.getByText(/Custo estimado da pesquisa/).waitFor();
+    assert.equal(
+      new URL(
+        await page
+          .getByRole("link", { name: /Abrir Google Shopping/ })
+          .getAttribute("href"),
+      ).searchParams.get("q"),
+      "Luminária",
+    );
+    await page
+      .getByRole("button", { name: "Editar busca", exact: true })
+      .click();
+    const query = page.getByRole("textbox", { name: "Busca de produto" });
+    assert.equal(
+      await query.evaluate((input) => input === document.activeElement),
+      true,
+    );
+    assert.equal(researchRequests, 1);
+    await query.fill("Luminária 220 V");
+    await research.click();
+    await page
+      .getByText("As ofertas retornadas não passaram na validação")
+      .waitFor();
+    await page
+      .getByText("Há ofertas sem um link confirmado na busca.")
+      .waitFor();
+    await page.getByText("Resultado para “Luminária 220 V”").waitFor();
+    await page.getByLabel("Preço máximo", { exact: true }).fill("1");
+    await research.click();
+    await page
+      .getByText("Os filtros ocultaram as ofertas encontradas")
+      .waitFor();
+    await page
+      .getByRole("button", { name: "Limpar filtros", exact: true })
+      .click();
+    await page.getByText("1 de 1 opções", { exact: true }).waitFor();
+    assert.equal(researchRequests, 3);
     await page.getByRole("button", { name: "Salvas", exact: true }).click();
 
     await page
